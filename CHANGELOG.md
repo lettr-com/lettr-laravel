@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - Seamless integration with Laravel's Mail system
   - Use Lettr as default mail driver or alongside other drivers
   - Full support for Mailable classes
+- **LettrMailable Base Class**
+  - Use Lettr templates instead of Blade views
+  - Fluent API for setting template slug, version, and project ID
+  - Substitution data support for template variables
 - **Service Provider**
   - Auto-registration via Laravel package discovery
   - Publishes configuration via `vendor:publish`
@@ -24,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
   - Converts Laravel emails to Lettr API format
   - Supports HTML, plain text, and attachments
   - CC and BCC recipient support
+  - Automatic Lettr template detection via headers
 - **Configuration**
   - Simple API key configuration via `.env`
   - Fallback to `services.lettr.key` config

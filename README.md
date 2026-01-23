@@ -121,6 +121,103 @@ Mail::to('other@example.com')
     ->send(new MarketingEmail());
 ```
 
+## Using Lettr Templates with Mailables
+
+Instead of using Blade views, you can send emails using Lettr templates directly. Extend the `LettrMailable` class:
+
+```php
+<?php
+
+namespace App\Mail;
+
+use Lettr\Laravel\Mail\LettrMailable;
+use Illuminate\Mail\Mailables\Envelope;
+
+class WelcomeEmail extends LettrMailable
+{
+    public function __construct(
+        public string $userName,
+        public string $activationUrl,
+    ) {}
+
+    public function envelope(): Envelope
+    {
+        return new Envelope(
+            from: 'hello@example.com',
+            subject: 'Welcome to Our App!',
+        );
+    }
+
+    public function build(): static
+    {
+        return $this
+            ->template('welcome-email', version: 2, projectId: 123)
+            ->substitutionData([
+                'user_name' => $this->userName,
+                'activation_url' => $this->activationUrl,
+            ]);
+    }
+}
+```
+
+Then send it like any other Mailable:
+
+```php
+use Illuminate\Support\Facades\Mail;
+use App\Mail\WelcomeEmail;
+
+Mail::to('user@example.com')
+    ->send(new WelcomeEmail(
+        userName: 'John',
+        activationUrl: 'https://example.com/activate/abc123'
+    ));
+```
+
+### LettrMailable Methods
+
+| Method | Description |
+|--------|-------------|
+| `template($slug, $version, $projectId)` | Set template slug with optional version and project |
+| `templateVersion($version)` | Set template version separately |
+| `projectId($projectId)` | Set project ID separately |
+| `substitutionData($data)` | Set substitution variables for the template |
+
+### Example: Order Confirmation
+
+```php
+class OrderConfirmation extends LettrMailable
+{
+    public function __construct(
+        public Order $order,
+    ) {}
+
+    public function envelope(): Envelope
+    {
+        return new Envelope(
+            subject: "Order #{$this->order->id} Confirmed",
+        );
+    }
+
+    public function build(): static
+    {
+        return $this
+            ->template('order-confirmation')
+            ->projectId(config('services.lettr.project_id'))
+            ->substitutionData([
+                'order_id' => $this->order->id,
+                'customer_name' => $this->order->customer->name,
+                'items' => $this->order->items->map(fn ($item) => [
+                    'name' => $item->name,
+                    'quantity' => $item->quantity,
+                    'price' => $item->formatted_price,
+                ])->toArray(),
+                'total' => $this->order->formatted_total,
+                'shipping_address' => $this->order->shipping_address,
+            ]);
+    }
+}
+```
+
 ## Direct API Usage
 
 ### Sending Emails

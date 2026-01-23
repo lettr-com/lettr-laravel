@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lettr\Laravel\Transport;
 
 use Exception;
+use Lettr\Builders\EmailBuilder;
 use Lettr\Dto\Email\Attachment;
 use Lettr\Lettr;
 use Symfony\Component\Mailer\Exception\TransportException;
@@ -50,21 +51,13 @@ class LettrTransportFactory extends AbstractTransport
                 ->to($this->stringifyAddresses($this->getToRecipients($email)))
                 ->subject($email->getSubject() ?? '');
 
-            // Add text content
-            $textBody = $email->getTextBody();
-            if (is_string($textBody)) {
-                $builder->text($textBody);
-            }
+            // Check for Lettr template headers
+            $templateSlug = $this->getHeader($email, 'X-Lettr-Template-Slug');
 
-            // Add HTML content
-            $htmlBody = $email->getHtmlBody();
-            if (is_string($htmlBody)) {
-                $builder->html($htmlBody);
-            } elseif (is_resource($htmlBody)) {
-                $contents = stream_get_contents($htmlBody);
-                if (is_string($contents)) {
-                    $builder->html($contents);
-                }
+            if ($templateSlug !== null) {
+                $this->configureTemplate($builder, $email, $templateSlug);
+            } else {
+                $this->configureContent($builder, $email);
             }
 
             // Add CC recipients
@@ -110,6 +103,71 @@ class LettrTransportFactory extends AbstractTransport
         }
 
         $email->getHeaders()->addHeader('X-Lettr-Request-ID', (string) $result->requestId);
+    }
+
+    /**
+     * Configure the builder with template settings.
+     */
+    protected function configureTemplate(EmailBuilder $builder, Email $email, string $templateSlug): void
+    {
+        $templateVersion = $this->getHeader($email, 'X-Lettr-Template-Version');
+        $projectId = $this->getHeader($email, 'X-Lettr-Project-Id');
+
+        $builder->useTemplate(
+            $templateSlug,
+            $templateVersion !== null ? (int) $templateVersion : null,
+            $projectId !== null ? (int) $projectId : null
+        );
+
+        // Get substitution data from header
+        $substitutionDataHeader = $this->getHeader($email, 'X-Lettr-Substitution-Data');
+        if ($substitutionDataHeader !== null) {
+            $decoded = base64_decode($substitutionDataHeader, true);
+            if ($decoded !== false) {
+                /** @var array<string, mixed> $substitutionData */
+                $substitutionData = json_decode($decoded, true);
+                if (is_array($substitutionData)) {
+                    $builder->substitutionData($substitutionData);
+                }
+            }
+        }
+    }
+
+    /**
+     * Configure the builder with HTML/text content.
+     */
+    protected function configureContent(EmailBuilder $builder, Email $email): void
+    {
+        // Add text content
+        $textBody = $email->getTextBody();
+        if (is_string($textBody)) {
+            $builder->text($textBody);
+        }
+
+        // Add HTML content
+        $htmlBody = $email->getHtmlBody();
+        if (is_string($htmlBody)) {
+            $builder->html($htmlBody);
+        } elseif (is_resource($htmlBody)) {
+            $contents = stream_get_contents($htmlBody);
+            if (is_string($contents)) {
+                $builder->html($contents);
+            }
+        }
+    }
+
+    /**
+     * Get a header value from the email.
+     */
+    protected function getHeader(Email $email, string $name): ?string
+    {
+        $header = $email->getHeaders()->get($name);
+
+        if ($header === null) {
+            return null;
+        }
+
+        return $header->getBodyAsString();
     }
 
     /**
