@@ -19,4 +19,3 @@ class TestCase extends Orchestra
         config()->set('lettr.api_key', 'test-api-key');
     }
 }
-

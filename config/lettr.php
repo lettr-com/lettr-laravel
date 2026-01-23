@@ -15,4 +15,3 @@ return [
     'api_key' => env('LETTR_API_KEY'),
 
 ];
-

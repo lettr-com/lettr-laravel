@@ -19,4 +19,3 @@ it('throws exception when api key is missing', function () {
 
     app('lettr');
 })->throws(\Lettr\Laravel\Exceptions\ApiKeyIsMissing::class);
-

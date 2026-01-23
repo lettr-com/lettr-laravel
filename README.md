@@ -1,30 +1,35 @@
 # Lettr for Laravel
 
-Official Laravel integration for the [Lettr](https://uselettr.com/) email API.
+[![CI](https://github.com/TOPOL-io/lettr-laravel/actions/workflows/ci.yml/badge.svg)](https://github.com/TOPOL-io/lettr-laravel/actions/workflows/ci.yml)
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/lettr/lettr-laravel.svg)](https://packagist.org/packages/lettr/lettr-laravel)
+[![Total Downloads](https://img.shields.io/packagist/dt/lettr/lettr-laravel.svg)](https://packagist.org/packages/lettr/lettr-laravel)
+[![PHP Version](https://img.shields.io/packagist/php-v/lettr/lettr-laravel.svg)](https://packagist.org/packages/lettr/lettr-laravel)
+[![License](https://img.shields.io/packagist/l/lettr/lettr-laravel.svg)](https://packagist.org/packages/lettr/lettr-laravel)
 
-> **Requires [PHP 8.4+](https://php.net/releases/)**
+Official Laravel integration for the [Lettr](https://lettr.com) email API.
+
+## Requirements
+
+- PHP 8.4+
+- Laravel 10.x, 11.x, or 12.x
 
 ## Installation
-
-First install Lettr for Laravel via the [Composer](https://getcomposer.org/) package manager:
 
 ```bash
 composer require lettr/lettr-laravel
 ```
 
-Next, you should configure your [Lettr API key](https://app.uselettr.com) in your application's `.env` file:
+Add your [Lettr API key](https://app.lettr.com) to your `.env` file:
 
 ```ini
 LETTR_API_KEY=your-api-key
 ```
 
-## Usage
+## Quick Start
 
-### Setting Lettr as Default Mail Driver
+### Using Laravel Mail (Recommended)
 
-Lettr for Laravel integrates seamlessly with Laravel's Mail system. To set Lettr as your **default mail driver**, follow these steps:
-
-**Step 1:** Add the Lettr mailer configuration to your `config/mail.php` file in the `mailers` array:
+Add the Lettr mailer to your `config/mail.php`:
 
 ```php
 'mailers' => [
@@ -36,133 +41,471 @@ Lettr for Laravel integrates seamlessly with Laravel's Mail system. To set Lettr
 ],
 ```
 
-> See `config/mail.example.php` for a complete example.
-
-**Step 2:** Set Lettr as the default mailer in your `.env` file:
+Set as default in `.env`:
 
 ```ini
 MAIL_MAILER=lettr
-LETTR_API_KEY=your-api-key
 ```
 
-> See `.env.example` for a complete example.
-
-**Step 3:** Send emails using Laravel's Mail facade - all emails will now use Lettr automatically:
+Send emails using Laravel's Mail facade:
 
 ```php
 use Illuminate\Support\Facades\Mail;
 use App\Mail\WelcomeEmail;
 
+Mail::to('recipient@example.com')->send(new WelcomeEmail());
+```
+
+### Using the Lettr Facade Directly
+
+```php
+use Lettr\Laravel\Facades\Lettr;
+
+$response = Lettr::emails()->send(
+    Lettr::emails()->create()
+        ->from('sender@example.com', 'Sender Name')
+        ->to(['recipient@example.com'])
+        ->subject('Hello from Lettr')
+        ->html('<h1>Hello!</h1><p>This is a test email.</p>')
+);
+
+echo $response->requestId; // Request ID for tracking
+echo $response->accepted;  // Number of accepted recipients
+```
+
+## Laravel Mail Integration
+
+### With Mailable Classes
+
+```php
+use Illuminate\Support\Facades\Mail;
+use App\Mail\OrderConfirmation;
+
 // Send using Mailable
-Mail::to('recipient@example.com')
-    ->send(new WelcomeEmail());
+Mail::to('customer@example.com')
+    ->cc('sales@example.com')
+    ->bcc('records@example.com')
+    ->send(new OrderConfirmation($order));
+```
 
-// Send using raw content
-Mail::raw('Plain text email', function ($message) {
+### With Raw Content
+
+```php
+Mail::raw('Plain text email content', function ($message) {
     $message->to('recipient@example.com')
-            ->subject('Test Email');
+            ->subject('Quick Update');
 });
+```
 
-// Send using HTML view
-Mail::send('emails.welcome', ['name' => 'John'], function ($message) {
+### With Views
+
+```php
+Mail::send('emails.welcome', ['user' => $user], function ($message) {
     $message->to('recipient@example.com')
             ->subject('Welcome!');
 });
 ```
 
-> **Note**
-> Once `MAIL_MAILER=lettr` is set, **all** emails sent via Laravel's Mail facade will use Lettr as the transport.
+### Multiple Mail Drivers
 
-### Using Lettr with Multiple Mail Drivers
-
-If you have multiple mail drivers configured and want to use Lettr for specific emails only, you can specify the mailer:
+Use Lettr for specific emails while keeping another default:
 
 ```php
-use Illuminate\Support\Facades\Mail;
-
 // Use Lettr for this specific email
 Mail::mailer('lettr')
     ->to('recipient@example.com')
-    ->send(new WelcomeEmail());
+    ->send(new TransactionalEmail());
 
-// This will use the default mailer (e.g., SMTP)
+// Uses default mailer
 Mail::to('other@example.com')
-    ->send(new NewsletterEmail());
+    ->send(new MarketingEmail());
 ```
 
-### Using the Lettr Facade
+## Direct API Usage
 
-You can also use the `Lettr` facade to access the Lettr API directly:
+### Sending Emails
+
+#### Using the Email Builder (Recommended)
 
 ```php
 use Lettr\Laravel\Facades\Lettr;
-use Lettr\Dto\SendEmailData;
 
-$email = new SendEmailData(
+$response = Lettr::emails()->send(
+    Lettr::emails()->create()
+        ->from('sender@example.com', 'Sender Name')
+        ->to(['recipient@example.com'])
+        ->cc(['cc@example.com'])
+        ->bcc(['bcc@example.com'])
+        ->replyTo('reply@example.com')
+        ->subject('Welcome!')
+        ->html('<h1>Welcome</h1>')
+        ->text('Welcome (plain text fallback)')
+        ->transactional()
+        ->withClickTracking(true)
+        ->withOpenTracking(true)
+        ->metadata(['user_id' => '123', 'campaign' => 'welcome'])
+        ->substitutionData(['name' => 'John', 'company' => 'Acme'])
+        ->campaignId('welcome-series')
+);
+```
+
+#### Quick Send Methods
+
+```php
+// HTML email
+$response = Lettr::emails()->sendHtml(
     from: 'sender@example.com',
-    to: ['recipient@example.com'],
-    subject: 'Hello from Lettr',
-    text: 'Plain text body',
-    html: '<p>HTML body</p>',
+    to: 'recipient@example.com',
+    subject: 'Hello',
+    html: '<p>HTML content</p>',
 );
 
-$response = Lettr::emails()->send($email);
+// Plain text email
+$response = Lettr::emails()->sendText(
+    from: ['email' => 'sender@example.com', 'name' => 'Sender'],
+    to: ['recipient1@example.com', 'recipient2@example.com'],
+    subject: 'Hello',
+    text: 'Plain text content',
+);
 
-echo $response->id; // The email ID
+// Template email
+$response = Lettr::emails()->sendTemplate(
+    from: 'sender@example.com',
+    to: 'recipient@example.com',
+    subject: 'Welcome!',
+    templateSlug: 'welcome-email',
+    templateVersion: 2,
+    projectId: 123,
+    substitutionData: ['name' => 'John'],
+);
 ```
 
-Or using array syntax:
+### Attachments
 
 ```php
-use Lettr\Laravel\Facades\Lettr;
-use Lettr\Dto\SendEmailData;
+use Lettr\Dto\Email\Attachment;
 
-$email = SendEmailData::from([
-    'from' => 'sender@example.com',
-    'to' => ['recipient@example.com'],
-    'subject' => 'Hello from Lettr',
-    'text' => 'Plain text body',
-    'html' => '<p>HTML body</p>',
-]);
+$email = Lettr::emails()->create()
+    ->from('sender@example.com')
+    ->to(['recipient@example.com'])
+    ->subject('Document attached')
+    ->html('<p>Please find the document attached.</p>')
+    // From file path
+    ->attachFile('/path/to/document.pdf')
+    // With custom name and mime type
+    ->attachFile('/path/to/file', 'custom-name.pdf', 'application/pdf')
+    // From binary data
+    ->attachData($binaryContent, 'report.csv', 'text/csv')
+    // Using Attachment DTO
+    ->attach(Attachment::fromFile('/path/to/image.png'));
 
 $response = Lettr::emails()->send($email);
 ```
 
-## Examples
+### Templates with Substitution Data
 
-Check the `examples/` directory for complete examples:
-- `examples/WelcomeEmail.php` - Example Mailable class
-- `examples/SendEmailController.php` - Example controller with different sending methods
+```php
+$response = Lettr::emails()->send(
+    Lettr::emails()->create()
+        ->from('sender@example.com')
+        ->to(['recipient@example.com'])
+        ->subject('Your Order #{{order_id}}')
+        ->useTemplate('order-confirmation', version: 1, projectId: 123)
+        ->substitutionData([
+            'order_id' => '12345',
+            'customer_name' => 'John Doe',
+            'items' => [
+                ['name' => 'Product A', 'price' => 29.99],
+                ['name' => 'Product B', 'price' => 49.99],
+            ],
+            'total' => 79.98,
+        ])
+);
+```
+
+### Email Options
+
+```php
+$email = Lettr::emails()->create()
+    ->from('sender@example.com')
+    ->to(['recipient@example.com'])
+    ->subject('Newsletter')
+    ->html($htmlContent)
+    // Tracking
+    ->withClickTracking(true)
+    ->withOpenTracking(true)
+    // Mark as transactional (bypasses unsubscribe lists)
+    ->transactional(false)
+    // CSS inlining
+    ->withInlineCss(true)
+    // Template variable substitution
+    ->withSubstitutions(true);
+```
+
+### Retrieving Emails
+
+#### Get Email Events by Request ID
+
+```php
+use Lettr\Enums\EventType;
+
+// After sending
+$response = Lettr::emails()->send($email);
+$requestId = $response->requestId;
+
+// Later, retrieve events
+$result = Lettr::emails()->get($requestId);
+
+foreach ($result->events as $event) {
+    echo $event->type->value;      // 'delivery', 'open', 'click', etc.
+    echo $event->recipient;        // Recipient email
+    echo $event->timestamp;        // When the event occurred
+
+    // Event-specific data
+    if ($event->type === EventType::Click) {
+        echo $event->clickUrl;
+    }
+    if ($event->type === EventType::Bounce) {
+        echo $event->bounceClass;
+        echo $event->reason;
+    }
+}
+```
+
+#### List Email Events with Filtering
+
+```php
+use Lettr\Dto\Email\ListEmailsFilter;
+
+// List all events
+$result = Lettr::emails()->list();
+
+// With filters
+$filter = ListEmailsFilter::create()
+    ->perPage(50)
+    ->forRecipient('user@example.com')
+    ->fromDate('2024-01-01')
+    ->toDate('2024-12-31');
+
+$result = Lettr::emails()->list($filter);
+
+echo $result->totalCount;
+echo $result->pagination->hasNextPage();
+
+// Paginate through results
+while ($result->hasMore()) {
+    foreach ($result->events as $event) {
+        // Process event
+    }
+
+    $filter = $filter->cursor($result->pagination->nextCursor);
+    $result = Lettr::emails()->list($filter);
+}
+```
+
+## Domain Management
+
+### List Domains
+
+```php
+$domains = Lettr::domains()->list();
+
+foreach ($domains as $domain) {
+    echo $domain->domain;           // example.com
+    echo $domain->status->value;    // 'pending', 'approved'
+    echo $domain->canSend;          // true/false
+}
+```
+
+### Add a Domain
+
+```php
+use Lettr\ValueObjects\DomainName;
+
+$result = Lettr::domains()->create('example.com');
+
+echo $result->domain;
+echo $result->status;
+
+// DNS records to configure
+echo $result->dns->returnPathHost;
+echo $result->dns->returnPathValue;
+
+if ($result->dns->dkim !== null) {
+    echo $result->dns->dkim->selector;
+    echo $result->dns->dkim->publicKey;
+}
+```
+
+### Verify Domain DNS
+
+```php
+$verification = Lettr::domains()->verify('example.com');
+
+if ($verification->isFullyVerified()) {
+    echo "Domain is ready to send!";
+} else {
+    if (!$verification->dkim->isValid()) {
+        echo "DKIM error: " . $verification->dkim->error;
+    }
+    if (!$verification->returnPath->isValid()) {
+        echo "Return path error: " . $verification->returnPath->error;
+    }
+}
+```
+
+### Get Domain Details
+
+```php
+$domain = Lettr::domains()->get('example.com');
+
+echo $domain->domain;
+echo $domain->status;
+echo $domain->trackingDomain;
+echo $domain->createdAt;
+```
+
+### Delete a Domain
+
+```php
+Lettr::domains()->delete('example.com');
+```
+
+## Webhooks
+
+### List Webhooks
+
+```php
+$webhooks = Lettr::webhooks()->list();
+
+foreach ($webhooks as $webhook) {
+    echo $webhook->id;
+    echo $webhook->name;
+    echo $webhook->url;
+    echo $webhook->enabled;
+    echo $webhook->authType->value;  // 'none', 'basic', 'bearer'
+
+    foreach ($webhook->eventTypes as $eventType) {
+        echo $eventType->value;
+    }
+
+    if ($webhook->isFailing()) {
+        echo "Last error: " . $webhook->lastError;
+    }
+}
+```
+
+### Get Webhook Details
+
+```php
+use Lettr\Enums\EventType;
+
+$webhook = Lettr::webhooks()->get('webhook-id');
+
+echo $webhook->name;
+echo $webhook->url;
+echo $webhook->lastTriggeredAt;
+
+if ($webhook->listensTo(EventType::Bounce)) {
+    echo "Webhook receives bounce notifications";
+}
+```
+
+## Event Types
+
+The SDK provides an `EventType` enum with helper methods:
+
+```php
+use Lettr\Enums\EventType;
+
+$type = EventType::Delivery;
+
+$type->label();        // "Delivery"
+$type->isSuccess();    // true (injection, delivery)
+$type->isFailure();    // false (bounce, policy_rejection, etc.)
+$type->isEngagement(); // false (open, initial_open, click)
+$type->isUnsubscribe(); // false (list_unsubscribe, link_unsubscribe)
+```
+
+Available event types: `injection`, `delivery`, `bounce`, `delay`, `policy_rejection`, `out_of_band`, `open`, `initial_open`, `click`, `generation_failure`, `generation_rejection`, `spam_complaint`, `list_unsubscribe`, `link_unsubscribe`
+
+## Error Handling
+
+```php
+use Lettr\Exceptions\ApiException;
+use Lettr\Exceptions\TransporterException;
+use Lettr\Exceptions\ValidationException;
+use Lettr\Exceptions\NotFoundException;
+use Lettr\Exceptions\UnauthorizedException;
+
+try {
+    $response = Lettr::emails()->send($email);
+} catch (ValidationException $e) {
+    // Invalid request data (422)
+    Log::error("Validation failed: " . $e->getMessage());
+} catch (UnauthorizedException $e) {
+    // Invalid API key (401)
+    Log::error("Authentication failed: " . $e->getMessage());
+} catch (NotFoundException $e) {
+    // Resource not found (404)
+    Log::error("Not found: " . $e->getMessage());
+} catch (ApiException $e) {
+    // Other API errors
+    Log::error("API error ({$e->getCode()}): " . $e->getMessage());
+} catch (TransporterException $e) {
+    // Network/transport errors
+    Log::error("Network error: " . $e->getMessage());
+}
+```
 
 ## Configuration
 
-You can publish the configuration file using:
+Publish the configuration file:
 
 ```bash
 php artisan vendor:publish --tag=lettr-config
 ```
 
-This will create a `config/lettr.php` file where you can configure your Lettr API key.
+This creates `config/lettr.php`:
 
-## Testing
-
-```bash
-composer test
+```php
+return [
+    'api_key' => env('LETTR_API_KEY'),
+];
 ```
 
-## Code Style
+The package also supports `config('services.lettr.key')` as a fallback.
+
+## Development
+
+### Install Dependencies
+
+```bash
+composer install
+```
+
+### Code Style
 
 ```bash
 composer lint
 ```
 
-## Static Analysis
+### Static Analysis
 
 ```bash
 composer analyse
 ```
 
+### Testing
+
+```bash
+composer test
+```
+
+## Contributing
+
+Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
+
 ## License
 
-MIT License. See [LICENSE](LICENSE) for more information.
-
+MIT License. See [LICENSE](LICENSE) for details.

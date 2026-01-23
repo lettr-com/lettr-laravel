@@ -16,4 +16,3 @@ class ApiKeyIsMissing extends InvalidArgumentException
         );
     }
 }
-

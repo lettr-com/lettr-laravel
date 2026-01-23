@@ -2,7 +2,7 @@
     "name": "lettr/lettr-laravel",
     "description": "Lettr for Laravel - Official Laravel integration for Lettr email API",
     "keywords": ["php", "lettr", "laravel", "sdk", "api", "client", "email"],
-    "homepage": "https://uselettr.com/",
+    "homepage": "https://lettr.com/",
     "license": "MIT",
     "authors": [
         {
@@ -14,7 +14,7 @@
         "php": "^8.4",
         "illuminate/http": "^10.0|^11.0|^12.0",
         "illuminate/support": "^10.0|^11.0|^12.0",
-        "lettr/lettr-php": "0.1.0-alpha.1",
+        "lettr/lettr-php": "^0.1.0",
         "symfony/mailer": "^6.2|^7.0"
     },
     "require-dev": {

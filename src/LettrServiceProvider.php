@@ -1,15 +1,22 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Lettr\Laravel;
 
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ServiceProvider;
-use Lettr\Lettr;
 use Lettr\Laravel\Exceptions\ApiKeyIsMissing;
 use Lettr\Laravel\Transport\LettrTransportFactory;
+use Lettr\Lettr;
 
 class LettrServiceProvider extends ServiceProvider
 {
+    /**
+     * The package version.
+     */
+    public const VERSION = '0.1.0';
+
     /**
      * Bootstrap any application services.
      */
@@ -17,8 +24,11 @@ class LettrServiceProvider extends ServiceProvider
     {
         $this->registerPublishing();
 
-        Mail::extend('lettr', function (array $config = []) {
-            return new LettrTransportFactory($this->app['lettr'], $config['options'] ?? []);
+        Mail::extend('lettr', function (array $config = []): LettrTransportFactory {
+            /** @var Lettr $lettr */
+            $lettr = $this->app->make('lettr');
+
+            return new LettrTransportFactory($lettr, $config['options'] ?? []);
         });
     }
 
@@ -74,6 +84,8 @@ class LettrServiceProvider extends ServiceProvider
 
     /**
      * Get the services provided by the provider.
+     *
+     * @return array<int, string>
      */
     public function provides(): array
     {
@@ -83,4 +95,3 @@ class LettrServiceProvider extends ServiceProvider
         ];
     }
 }
-
