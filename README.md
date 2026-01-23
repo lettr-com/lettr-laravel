@@ -19,6 +19,12 @@ Official Laravel integration for the [Lettr](https://lettr.com) email API.
 composer require lettr/lettr-laravel
 ```
 
+Publish the configuration file:
+
+```bash
+php artisan vendor:publish --tag=lettr-config
+```
+
 Add your [Lettr API key](https://app.lettr.com) to your `.env` file:
 
 ```ini
@@ -215,6 +221,75 @@ class OrderConfirmation extends LettrMailable
                 'shipping_address' => $this->order->shipping_address,
             ]);
     }
+}
+```
+
+## Inline Template Sending
+
+For quick template sending without creating a Mailable class, use the `Mail::lettr()` method:
+
+```php
+use Illuminate\Support\Facades\Mail;
+
+// Simple usage
+Mail::lettr()
+    ->to('user@example.com')
+    ->sendTemplate('welcome-email', ['name' => 'John']);
+
+// With version and project ID
+Mail::lettr()
+    ->to('user@example.com')
+    ->sendTemplate('order-confirmation', [
+        'order_id' => 123,
+        'items' => $items,
+    ], version: 2, projectId: 456);
+
+// With CC and BCC
+Mail::lettr()
+    ->to('user@example.com')
+    ->cc('manager@example.com')
+    ->bcc('records@example.com')
+    ->sendTemplate('invoice', $invoiceData);
+```
+
+### Testing with Mail::fake()
+
+The `Mail::lettr()` method works seamlessly with Laravel's `Mail::fake()` for testing:
+
+```php
+use Illuminate\Support\Facades\Mail;
+use Lettr\Laravel\Mail\InlineLettrMailable;
+
+public function test_welcome_email_is_sent(): void
+{
+    Mail::fake();
+
+    // Trigger the code that sends the email
+    Mail::lettr()
+        ->to('user@example.com')
+        ->sendTemplate('welcome-email', ['name' => 'John']);
+
+    // Assert the email was sent
+    Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
+        return $mailable->hasTo('user@example.com');
+    });
+}
+
+public function test_order_confirmation_has_correct_recipients(): void
+{
+    Mail::fake();
+
+    Mail::lettr()
+        ->to('customer@example.com')
+        ->cc('sales@example.com')
+        ->bcc('records@example.com')
+        ->sendTemplate('order-confirmation', ['order_id' => 123]);
+
+    Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
+        return $mailable->hasTo('customer@example.com')
+            && $mailable->hasCc('sales@example.com')
+            && $mailable->hasBcc('records@example.com');
+    });
 }
 ```
 
@@ -557,13 +632,7 @@ try {
 
 ## Configuration
 
-Publish the configuration file:
-
-```bash
-php artisan vendor:publish --tag=lettr-config
-```
-
-This creates `config/lettr.php`:
+The published `config/lettr.php` file contains:
 
 ```php
 return [
@@ -571,7 +640,7 @@ return [
 ];
 ```
 
-The package also supports `config('services.lettr.key')` as a fallback.
+The package also supports `config('services.lettr.key')` as a fallback for the API key.
 
 ## Development
 

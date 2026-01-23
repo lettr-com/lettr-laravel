@@ -103,6 +103,15 @@ abstract class LettrMailable extends Mailable
      */
     public function build(): static
     {
+        // Use the lettr mailer/transport
+        $this->mailer('lettr');
+
+        // Set placeholder HTML - the actual content comes from the Lettr template
+        // This is required because Laravel's Mailer expects some content
+        if ($this->templateSlug !== null) {
+            $this->html('<p>This email uses Lettr template: '.$this->templateSlug.'</p>');
+        }
+
         // Register callback to add Lettr headers
         $this->withSymfonyMessage(function ($message): void {
             if ($this->templateSlug !== null) {

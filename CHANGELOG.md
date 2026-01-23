@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2025-01-23
+
+### Added
+
+- **Inline Template Sending** - Send Lettr templates without creating a Mailable class
+  - `Mail::lettr()->to()->sendTemplate()` fluent API
+  - Support for template version and project ID parameters
+  - Full support for CC and BCC recipients
+- **LettrPendingMail** - Extended PendingMail with `sendTemplate()` method
+- **InlineLettrMailable** - Concrete mailable for inline template usage
+- **Mail::fake() Support** - Full compatibility with Laravel's mail faking for tests
+- **Documentation** - Added usage examples and testing documentation to README
+
+### Changed
+
+- LettrMailable now automatically uses the `lettr` mailer
+- LettrMailable sets placeholder HTML content for Laravel compatibility
+- Moved config publishing instructions to Installation section in README
+
 ## [0.1.0] - 2025-01-23
 
 ### Added
