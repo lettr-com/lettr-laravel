@@ -43,6 +43,8 @@ return [
         'blade_path' => resource_path('views/emails/lettr'),
         'mailable_path' => app_path('Mail/Lettr'),
         'mailable_namespace' => 'App\\Mail\\Lettr',
+        'dto_path' => app_path('Dto/Lettr'),
+        'dto_namespace' => 'App\\Dto\\Lettr',
     ],
 
 ];

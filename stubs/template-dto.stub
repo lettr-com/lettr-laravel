@@ -1,0 +1,19 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+{{ imports }}
+final readonly class {{ class }}
+{
+{{ docblock }}    public function __construct(
+{{ properties }}
+    ) {}
+
+    public function toArray(): array
+    {
+        return [
+{{ toArrayBody }}
+        ];
+    }
+}

@@ -6,6 +6,7 @@ namespace Lettr\Laravel\Services;
 
 use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Dto\Template\TemplateDetail;
+use Lettr\Responses\GetMergeTagsResponse;
 use Lettr\Responses\ListTemplatesResponse;
 use Lettr\Services\TemplateService;
 
@@ -41,6 +42,18 @@ class TemplateServiceWrapper
         $projectId = $projectId ?? $this->defaultProjectId;
 
         return $this->templateService->get($slug, $projectId);
+    }
+
+    /**
+     * Get merge tags for a template.
+     *
+     * If no project ID is provided and a default is configured, uses the default.
+     */
+    public function getMergeTags(string $slug, ?int $projectId = null, ?int $version = null): GetMergeTagsResponse
+    {
+        $projectId = $projectId ?? $this->defaultProjectId;
+
+        return $this->templateService->getMergeTags($slug, $projectId, $version);
     }
 
     /**
