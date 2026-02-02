@@ -288,12 +288,17 @@ class PullCommand extends Command
         $dtoProperty = $hasMergeTags ? "public readonly {$dtoClassName} \$data," : '';
         $withMergeTagsMethod = $hasMergeTags ? $this->generateWithMergeTagsMethod() : '';
 
+        // Generate HTML path relative to base path
+        $htmlBasePath = config('lettr.templates.html_path');
+        $htmlPath = str_replace(base_path().'/', '', $htmlBasePath).'/'.$template->slug.'.html';
+
         return str_replace(
             [
                 '{{ namespace }}',
                 '{{ class }}',
                 '{{ slug }}',
                 '{{ subject }}',
+                '{{ htmlPath }}',
                 '{{ dtoImport }}',
                 '{{ dtoProperty }}',
                 '{{ withMergeTagsMethod }}',
@@ -303,6 +308,7 @@ class PullCommand extends Command
                 $className,
                 $template->slug,
                 $subject,
+                $htmlPath,
                 $dtoImport,
                 $dtoProperty,
                 $withMergeTagsMethod,

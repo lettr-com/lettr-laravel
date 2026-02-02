@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Lettr\Laravel;
 
+use Closure;
 use Lettr\Laravel\Services\TemplateServiceWrapper;
 use Lettr\Lettr;
 use Lettr\Services\DomainService;
@@ -20,19 +21,36 @@ use Lettr\Services\WebhookService;
  */
 class LettrManager
 {
+    private ?Lettr $resolvedLettr = null;
+
     private ?TemplateServiceWrapper $templateServiceWrapper = null;
 
+    /**
+     * @param  Closure(): Lettr  $lettrResolver
+     */
     public function __construct(
-        private readonly Lettr $lettr,
+        private readonly Closure $lettrResolver,
         private readonly ?int $defaultProjectId = null,
     ) {}
+
+    /**
+     * Get the lazily-resolved Lettr SDK instance.
+     */
+    protected function lettr(): Lettr
+    {
+        if ($this->resolvedLettr === null) {
+            $this->resolvedLettr = ($this->lettrResolver)();
+        }
+
+        return $this->resolvedLettr;
+    }
 
     /**
      * Get the email service.
      */
     public function emails(): EmailService
     {
-        return $this->lettr->emails();
+        return $this->lettr()->emails();
     }
 
     /**
@@ -40,7 +58,7 @@ class LettrManager
      */
     public function domains(): DomainService
     {
-        return $this->lettr->domains();
+        return $this->lettr()->domains();
     }
 
     /**
@@ -48,7 +66,7 @@ class LettrManager
      */
     public function webhooks(): WebhookService
     {
-        return $this->lettr->webhooks();
+        return $this->lettr()->webhooks();
     }
 
     /**
@@ -58,7 +76,7 @@ class LettrManager
     {
         if ($this->templateServiceWrapper === null) {
             $this->templateServiceWrapper = new TemplateServiceWrapper(
-                $this->lettr->templates(),
+                $this->lettr()->templates(),
                 $this->defaultProjectId,
             );
         }
@@ -71,7 +89,7 @@ class LettrManager
      */
     public function sdk(): Lettr
     {
-        return $this->lettr;
+        return $this->lettr();
     }
 
     /**

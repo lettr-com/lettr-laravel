@@ -99,12 +99,31 @@ abstract class LettrMailable extends Mailable
     }
 
     /**
+     * Get the merge tags for the template.
+     *
+     * Override this method in subclasses to provide merge tag data.
+     * This is automatically called during build() and merged with substitutionData.
+     *
+     * @return array<string, mixed>
+     */
+    public function withMergeTags(): array
+    {
+        return [];
+    }
+
+    /**
      * Build the message.
      */
     public function build(): static
     {
         // Use the lettr mailer/transport
         $this->mailer('lettr');
+
+        // Merge data from withMergeTags() with any manually set substitution data
+        $mergeTags = $this->withMergeTags();
+        if (! empty($mergeTags)) {
+            $this->substitutionData = array_merge($mergeTags, $this->substitutionData);
+        }
 
         // Set placeholder HTML - the actual content comes from the Lettr template
         // This is required because Laravel's Mailer expects some content
