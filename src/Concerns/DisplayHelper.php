@@ -10,11 +10,20 @@ use function Laravel\Prompts\note;
 
 trait DisplayHelper
 {
-    protected ?Theme $theme = null;
+    protected Theme $theme;
 
     protected function initTheme(?Theme $theme = null): void
     {
         $this->theme = $theme ?? Theme::random();
+    }
+
+    protected function getTheme(): Theme
+    {
+        if (! isset($this->theme)) {
+            $this->theme = Theme::random();
+        }
+
+        return $this->theme;
     }
 
     protected function displayLettrHeader(string $featureName, ?Theme $theme = null): void
@@ -36,7 +45,7 @@ trait DisplayHelper
             '╚══════╝ ╚══════╝    ╚═╝       ╚═╝    ╚═╝  ╚═╝',
         ];
 
-        $gradient = $this->theme->gradient();
+        $gradient = $this->getTheme()->gradient();
 
         $this->newLine();
 
@@ -66,7 +75,7 @@ trait DisplayHelper
         $padding = str_repeat(' ', max(0, $paddingLength));
 
         $this->output->writeln(
-            "\e[48;5;{$this->theme->primary()}m\033[2K{$padding}\e[30m\e[1m{$text}{$link}\e[0m"
+            "\e[48;5;{$this->getTheme()->primary()}m\033[2K{$padding}\e[30m\e[1m{$text}{$link}\e[0m"
         );
         $this->newLine();
     }
@@ -78,7 +87,7 @@ trait DisplayHelper
 
     protected function displayBadge(string $text): string
     {
-        return "\e[48;5;{$this->theme->primary()}m\e[30m\e[1m{$text}\e[0m";
+        return "\e[48;5;{$this->getTheme()->primary()}m\e[30m\e[1m{$text}\e[0m";
     }
 
     protected function hyperlink(string $label, string $url): string

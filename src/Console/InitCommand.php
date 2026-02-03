@@ -279,7 +279,7 @@ PHP;
                 "$1{$lettrMailer}",
                 $mailConfig,
                 1
-            );
+            ) ?? $mailConfig;
 
             $this->files->put($mailConfigPath, $mailConfig);
         } else {
@@ -430,11 +430,13 @@ PHP;
     {
         $this->newLine();
 
-        // Get current MAIL_FROM_ADDRESS from env to pre-select
-        $currentFromAddress = env('MAIL_FROM_ADDRESS', '');
+        // Get current MAIL_FROM_ADDRESS from config to pre-select
+        $currentFromAddress = config('mail.from.address', '');
+        $currentFromAddress = is_string($currentFromAddress) ? $currentFromAddress : '';
         $currentDomain = '';
-        if ($currentFromAddress && str_contains($currentFromAddress, '@')) {
-            $currentDomain = substr($currentFromAddress, strpos($currentFromAddress, '@') + 1);
+        if ($currentFromAddress !== '' && str_contains($currentFromAddress, '@')) {
+            $atPosition = strpos($currentFromAddress, '@');
+            $currentDomain = $atPosition !== false ? substr($currentFromAddress, $atPosition + 1) : '';
         }
 
         // Default to current domain if it's in the list, otherwise first option
@@ -449,8 +451,9 @@ PHP;
 
         // Ask for the local part of the email (before @)
         $currentLocalPart = 'hello';
-        if ($currentFromAddress && str_contains($currentFromAddress, '@')) {
-            $currentLocalPart = substr($currentFromAddress, 0, strpos($currentFromAddress, '@'));
+        if ($currentFromAddress !== '' && str_contains($currentFromAddress, '@')) {
+            $atPosition = strpos($currentFromAddress, '@');
+            $currentLocalPart = $atPosition !== false ? substr($currentFromAddress, 0, $atPosition) : 'hello';
         }
 
         $localPart = text(
@@ -633,7 +636,7 @@ PHP;
 
         if (preg_match($pattern, $envContent)) {
             // Replace existing value
-            $envContent = preg_replace($pattern, "{$key}={$value}", $envContent);
+            $envContent = preg_replace($pattern, "{$key}={$value}", $envContent) ?? $envContent;
         } else {
             // Append new variable
             $envContent = rtrim($envContent)."\n\n{$key}={$value}\n";
