@@ -102,16 +102,40 @@ class InitCommand extends Command
 
             if ($setMailer) {
                 $this->writeEnvVariable('MAIL_MAILER', 'lettr');
-                outro('Setup complete! All emails will now be sent through Lettr.');
-            } else {
-                note('You can set MAIL_MAILER=lettr later to send all emails through Lettr.');
-                outro('Setup complete!');
             }
-        } else {
-            outro('Setup complete! Send emails with Mail::lettr()->sendTemplate()');
         }
 
+        // Final success message
+        $this->displayOutro($keptLocalTemplates);
+
         return self::SUCCESS;
+    }
+
+    /**
+     * Display the final success message.
+     */
+    protected function displayOutro(bool $keptLocalTemplates): void
+    {
+        $this->newLine();
+        $this->output->writeln($this->displayBadge(' ✓ Setup Complete '));
+        $this->newLine();
+
+        if ($keptLocalTemplates) {
+            $this->line('  Your emails will be sent through Lettr.');
+            $this->line('  Templates remain in your codebase for version control.');
+        } else {
+            $this->line('  Send emails using:');
+            $this->newLine();
+            $this->line('    <fg=cyan>Mail::lettr()->sendTemplate(\'welcome\', $data, $to);</>');
+            $this->newLine();
+            $this->line('  Or with generated Mailables:');
+            $this->newLine();
+            $this->line('    <fg=cyan>Mail::to($user)->send(new Welcome($data));</>');
+        }
+
+        $this->newLine();
+        $this->line('  <fg=gray>Docs:</> '.$this->hyperlink('https://lettr.com/docs', 'https://lettr.com/docs'));
+        $this->newLine();
     }
 
     /**
@@ -312,6 +336,8 @@ PHP;
      */
     protected function setupSendingDomain(array $domainOptions): void
     {
+        $this->newLine();
+
         // Get current MAIL_FROM_ADDRESS from env to pre-select
         $currentFromAddress = env('MAIL_FROM_ADDRESS', '');
         $currentDomain = '';
@@ -326,6 +352,7 @@ PHP;
             label: 'Select a sending domain',
             options: $domainOptions,
             default: $defaultDomain,
+            hint: 'Verified domains from your Lettr account',
         );
 
         // Ask for the local part of the email (before @)
@@ -335,7 +362,7 @@ PHP;
         }
 
         $localPart = text(
-            label: 'Enter sender email (local part)',
+            label: 'Sender email address',
             default: $currentLocalPart,
             required: true,
             hint: "Will send from: {$currentLocalPart}@{$selectedDomain}",
@@ -345,8 +372,8 @@ PHP;
 
         // Write to .env
         $this->writeEnvVariable('MAIL_FROM_ADDRESS', $fullEmail);
-
-        note("Sender configured: {$fullEmail}");
+        $this->newLine();
+        note("Sender: {$fullEmail}");
     }
 
     /**
@@ -392,9 +419,10 @@ PHP;
         // Push templates to Lettr
         $this->newLine();
         $this->call('lettr:push');
+        $this->newLine();
 
-        // Offer to generate type-safe classes (works with templates already in Lettr)
-        $this->offerTypeGeneration();
+        // Offer to generate type-safe classes (templates already local, so offer mailables)
+        $this->offerTypeGeneration(withMailables: true);
 
         return false;
     }
@@ -411,33 +439,41 @@ PHP;
         );
 
         if ($downloadTemplates) {
-            // Pull templates from Lettr
-            $this->newLine();
-            $this->call('lettr:pull');
+            $this->offerTypeGeneration(withMailables: true);
+        } else {
+            $this->offerTypeGeneration(withMailables: false);
         }
-
-        // Offer to generate type-safe classes (even without downloading HTML files)
-        $this->offerTypeGeneration();
     }
 
     /**
      * Offer to generate type-safe classes (enum, DTOs, mailables).
+     *
+     * @param  bool  $withMailables  Whether to offer mailables option (requires template download)
      */
-    protected function offerTypeGeneration(): void
+    protected function offerTypeGeneration(bool $withMailables = true): void
     {
+        $options = [
+            'enum' => 'Template enum (LettrTemplate::WelcomeEmail)',
+            'dtos' => 'DTOs for merge tags (WelcomeEmailData)',
+        ];
+
+        $defaults = ['enum', 'dtos'];
+
+        if ($withMailables) {
+            $options['mailables'] = 'Mailable classes (WelcomeEmail extends LettrMailable)';
+            $defaults[] = 'mailables';
+        }
+
         $generate = multiselect(
             label: 'Which type-safe classes do you want to generate?',
-            options: [
-                'enum' => 'Template enum (LettrTemplate::WelcomeEmail)',
-                'dtos' => 'DTOs for merge tags (WelcomeEmailData)',
-                'mailables' => 'Mailable classes (WelcomeEmail extends LettrMailable)',
-            ],
-            default: ['enum', 'dtos', 'mailables'],
+            options: $options,
+            default: $defaults,
             hint: 'Space to toggle, Enter to confirm',
         );
 
         if (empty($generate)) {
-            note('No classes selected. Generate them later with:');
+            $this->newLine();
+            note('Skipped. Generate classes later with:');
             $this->line('  php artisan lettr:generate-enum');
             $this->line('  php artisan lettr:generate-dtos');
             $this->line('  php artisan lettr:pull --with-mailables');
@@ -447,18 +483,29 @@ PHP;
 
         $this->newLine();
 
-        if (in_array('enum', $generate, true)) {
-            $this->call('lettr:generate-enum');
-        }
-
-        // Skip standalone DTO generation if mailables is selected (pull --with-mailables generates DTOs)
-        if (in_array('dtos', $generate, true) && ! in_array('mailables', $generate, true)) {
-            $this->call('lettr:generate-dtos');
-        }
-
+        // When mailables is selected, use pull --with-mailables (downloads HTML + generates DTOs + mailables)
         if (in_array('mailables', $generate, true)) {
+            if (in_array('enum', $generate, true)) {
+                $this->call('lettr:generate-enum');
+                $this->newLine();
+            }
+
             $this->call('lettr:pull', ['--with-mailables' => true]);
+        } else {
+            // No mailables - generate enum and/or DTOs separately
+            if (in_array('enum', $generate, true)) {
+                $this->call('lettr:generate-enum');
+            }
+
+            if (in_array('dtos', $generate, true)) {
+                if (in_array('enum', $generate, true)) {
+                    $this->newLine();
+                }
+                $this->call('lettr:generate-dtos');
+            }
         }
+
+        $this->newLine();
     }
 
     /**
