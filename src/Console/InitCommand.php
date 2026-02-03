@@ -222,25 +222,25 @@ class InitCommand extends Command
                 label: 'An API key is already configured. Do you want to replace it?',
                 default: false,
             )) {
-                return $this->askForApiKey();
+                return $this->askForApiKey(showLink: false);
             }
 
             return $existingKey;
         }
 
-        return $this->askForApiKey();
+        return $this->askForApiKey(showLink: true);
     }
 
     /**
      * Prompt the user for their API key.
      */
-    protected function askForApiKey(): ?string
+    protected function askForApiKey(bool $showLink = true): ?string
     {
         $apiKey = password(
             label: 'Enter your Lettr API key',
             placeholder: 'lttr_xxxx',
             required: 'An API key is required to use Lettr.',
-            hint: 'Find your API key at https://lettr.app/settings/api',
+            hint: $showLink ? 'Get your API key at https://app.lettr.com/api-keys' : '',
         );
 
         if ($apiKey === '') {

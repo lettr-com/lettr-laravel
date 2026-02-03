@@ -4,6 +4,11 @@ use Illuminate\Filesystem\Filesystem;
 use Lettr\Laravel\Console\InitCommand;
 use Lettr\Laravel\LettrManager;
 
+function apiKeyQuestion(): string
+{
+    return 'Enter your Lettr API key';
+}
+
 beforeEach(function () {
     $this->filesystem = Mockery::mock(Filesystem::class);
     $this->app->instance(Filesystem::class, $this->filesystem);
@@ -58,7 +63,7 @@ it('completes setup when user has no templates and skips download', function () 
         ->once();
 
     $this->artisan(InitCommand::class)
-        ->expectsQuestion('Enter your Lettr API key', 'test_api_key')
+        ->expectsQuestion(apiKeyQuestion(), 'test_api_key')
         ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
@@ -166,7 +171,7 @@ PHP;
         ->once();
 
     $this->artisan(InitCommand::class)
-        ->expectsQuestion('Enter your Lettr API key', 'test_key')
+        ->expectsQuestion(apiKeyQuestion(), 'test_key')
         ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
@@ -227,7 +232,7 @@ PHP;
         ->once();
 
     $this->artisan(InitCommand::class)
-        ->expectsQuestion('Enter your Lettr API key', 'test_key')
+        ->expectsQuestion(apiKeyQuestion(), 'test_key')
         ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
@@ -287,7 +292,7 @@ it('creates env file from example if it does not exist', function () {
         ->once();
 
     $this->artisan(InitCommand::class)
-        ->expectsQuestion('Enter your Lettr API key', 'new_key')
+        ->expectsQuestion(apiKeyQuestion(), 'new_key')
         ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
@@ -334,7 +339,7 @@ it('replaces existing api key in env file', function () {
         ->once();
 
     $this->artisan(InitCommand::class)
-        ->expectsQuestion('Enter your Lettr API key', 'new_key')
+        ->expectsQuestion(apiKeyQuestion(), 'new_key')
         ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
@@ -344,7 +349,7 @@ it('replaces existing api key in env file', function () {
 
 it('fails when api key is not provided', function () {
     $this->artisan(InitCommand::class)
-        ->expectsQuestion('Enter your Lettr API key', '')
+        ->expectsQuestion(apiKeyQuestion(), '')
         ->assertFailed();
 });
 
