@@ -82,6 +82,8 @@ class InitCommand extends Command
         $this->startAsyncFetches();
 
         // Step 1: API Key
+        $existingApiKey = config('lettr.api_key');
+        $hadExistingApiKey = is_string($existingApiKey) && $existingApiKey !== '';
         $apiKey = $this->setupApiKey();
 
         if ($apiKey === null) {
@@ -90,37 +92,21 @@ class InitCommand extends Command
             return self::FAILURE;
         }
 
+        // Track if API key was changed (new key or different from existing)
+        $apiKeyChanged = ! $hadExistingApiKey || $apiKey !== $existingApiKey;
+
         // Step 2: Publish config
-        $this->publishConfig();
+        $configPublished = $this->publishConfig();
 
         // Step 3: Setup mailer
-        $this->setupMailer();
+        $mailerConfigured = $this->setupMailer();
 
-        // Step 4: Write API key to .env and update runtime config
-        $this->writeEnvVariable('LETTR_API_KEY', $apiKey);
-        config()->set('lettr.api_key', $apiKey);
+        // Step 4: Set MAIL_MAILER (skip if already set to lettr)
+        $currentMailer = config('mail.default');
+        $usingLettrAsDefault = $currentMailer === 'lettr';
+        $mailMailerChanged = false;
 
-        // Restart async fetches with the new/confirmed API key
-        $this->startAsyncFetches();
-
-        note('Configuration saved to .env and config/lettr.php');
-
-        // Step 5: Template workflow
-        $keptLocalTemplates = $this->handleTemplateWorkflow();
-
-        // Step 6: Setup sending domain (silently fetch, skip if fails)
-        $domainOptions = $this->fetchDomains();
-        $hasSendingDomain = false;
-        if ($domainOptions !== null) {
-            $this->setupSendingDomain($domainOptions);
-            $hasSendingDomain = true;
-        }
-
-        // Step 7: Fetch a sample template for personalized examples
-        $this->fetchSampleTemplate();
-
-        // Step 8: Set MAIL_MAILER (only for local templates flow)
-        if ($keptLocalTemplates) {
+        if (! $usingLettrAsDefault) {
             $setMailer = confirm(
                 label: 'Set MAIL_MAILER=lettr in your .env?',
                 default: true,
@@ -128,12 +114,45 @@ class InitCommand extends Command
             );
 
             if ($setMailer) {
-                $this->writeEnvVariable('MAIL_MAILER', 'lettr');
+                $usingLettrAsDefault = true;
+                $mailMailerChanged = true;
             }
         }
 
+        // Step 5: Write API key and MAIL_MAILER to .env and update runtime config
+        if ($apiKeyChanged) {
+            $this->writeEnvVariable('LETTR_API_KEY', $apiKey);
+        }
+        config()->set('lettr.api_key', $apiKey);
+
+        if ($mailMailerChanged) {
+            $this->writeEnvVariable('MAIL_MAILER', 'lettr');
+        }
+
+        // Restart async fetches with the new/confirmed API key
+        $this->startAsyncFetches();
+
+        // Only show note if something was actually changed
+        if ($apiKeyChanged || $configPublished || $mailerConfigured || $mailMailerChanged) {
+            note('Configuration saved to .env and config/lettr.php');
+        }
+
+        // Step 6: Template workflow
+        $keptLocalTemplates = $this->handleTemplateWorkflow();
+
+        // Step 7: Setup sending domain (silently fetch, skip if fails)
+        $domainOptions = $this->fetchDomains();
+        $hasSendingDomain = false;
+        if ($domainOptions !== null) {
+            $this->setupSendingDomain($domainOptions);
+            $hasSendingDomain = true;
+        }
+
+        // Step 8: Fetch a sample template for personalized examples
+        $this->fetchSampleTemplate();
+
         // Final success message
-        $this->displayOutro($keptLocalTemplates, $hasSendingDomain);
+        $this->displayOutro($keptLocalTemplates, $hasSendingDomain, $usingLettrAsDefault);
 
         return self::SUCCESS;
     }
@@ -141,11 +160,14 @@ class InitCommand extends Command
     /**
      * Display the final success message.
      */
-    protected function displayOutro(bool $keptLocalTemplates, bool $hasSendingDomain): void
+    protected function displayOutro(bool $keptLocalTemplates, bool $hasSendingDomain, bool $usingLettrAsDefault): void
     {
         $this->newLine();
         $this->output->writeln($this->displayBadge(' ✓ Setup Complete '));
         $this->newLine();
+
+        // Determine the Mail facade prefix based on whether Lettr is the default mailer
+        $mailPrefix = $usingLettrAsDefault ? 'Mail::' : 'Mail::mailer(\'lettr\')->';
 
         if ($keptLocalTemplates) {
             $this->line('  Your emails will be sent through Lettr.');
@@ -159,7 +181,7 @@ class InitCommand extends Command
                 // Blade mode - only show Mailable example
                 $this->line('  Send emails using:');
                 $this->newLine();
-                $this->line("    <fg=cyan>Mail::to(\$user)->send(new {$className}(\$data));</>");
+                $this->line("    <fg=cyan>{$mailPrefix}to(\$user)->send(new {$className}(\$data));</>");
             } else {
                 // API mode - show both examples
                 $this->line('  Send emails using:');
@@ -172,7 +194,7 @@ class InitCommand extends Command
                 $this->newLine();
                 $this->line('  Or with generated Mailables:');
                 $this->newLine();
-                $this->line("    <fg=cyan>Mail::to(\$user)->send(new {$className}(\$data));</>");
+                $this->line("    <fg=cyan>{$mailPrefix}to(\$user)->send(new {$className}(\$data));</>");
             }
         }
 
@@ -231,7 +253,7 @@ class InitCommand extends Command
     /**
      * Publish the Lettr config file.
      */
-    protected function publishConfig(): void
+    protected function publishConfig(): bool
     {
         $configPath = config_path('lettr.php');
 
@@ -240,7 +262,7 @@ class InitCommand extends Command
                 label: 'config/lettr.php already exists. Overwrite it?',
                 default: false,
             )) {
-                return;
+                return false;
             }
         }
 
@@ -248,12 +270,14 @@ class InitCommand extends Command
             '--tag' => 'lettr-config',
             '--force' => true,
         ]);
+
+        return true;
     }
 
     /**
      * Add the Lettr mailer to config/mail.php.
      */
-    protected function setupMailer(): void
+    protected function setupMailer(): bool
     {
         $mailConfigPath = config_path('mail.php');
 
@@ -261,14 +285,14 @@ class InitCommand extends Command
             $this->components->warn('config/mail.php not found. Skipping mailer setup.');
             $this->components->info('Add the lettr mailer manually to your mail config.');
 
-            return;
+            return false;
         }
 
         $mailConfig = $this->files->get($mailConfigPath);
 
         // Check if lettr mailer is already configured
         if (str_contains($mailConfig, "'lettr'")) {
-            return;
+            return false;
         }
 
         // Find the mailers array and add lettr
@@ -291,9 +315,13 @@ PHP;
             ) ?? $mailConfig;
 
             $this->files->put($mailConfigPath, $mailConfig);
+
+            return true;
         } else {
             $this->components->warn('Could not auto-configure the lettr mailer.');
             $this->showManualMailerInstructions();
+
+            return false;
         }
     }
 

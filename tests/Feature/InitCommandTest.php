@@ -59,6 +59,7 @@ it('completes setup when user has no templates and skips download', function () 
 
     $this->artisan(InitCommand::class)
         ->expectsQuestion('Enter your Lettr API key', 'test_api_key')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
         ->expectsQuestion('Which type-safe classes do you want to generate?', [])
@@ -97,14 +98,15 @@ it('asks to replace existing api key', function () {
         ->with($envPath)
         ->andReturn("LETTR_API_KEY=existing_key\n");
 
+    // No .env write expected since user chose not to replace API key and not to set MAIL_MAILER
     $this->filesystem
-        ->shouldReceive('put')
-        ->with($envPath, Mockery::any())
-        ->once();
+        ->shouldNotReceive('put')
+        ->with($envPath, Mockery::any());
 
     $this->artisan(InitCommand::class)
         ->expectsConfirmation('An API key is already configured. Do you want to replace it?', 'no')
         ->expectsConfirmation('config/lettr.php already exists. Overwrite it?', 'no')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
         ->expectsQuestion('Which type-safe classes do you want to generate?', [])
@@ -165,6 +167,7 @@ PHP;
 
     $this->artisan(InitCommand::class)
         ->expectsQuestion('Enter your Lettr API key', 'test_key')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
         ->expectsQuestion('Which type-safe classes do you want to generate?', [])
@@ -225,6 +228,7 @@ PHP;
 
     $this->artisan(InitCommand::class)
         ->expectsQuestion('Enter your Lettr API key', 'test_key')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
         ->expectsQuestion('Which type-safe classes do you want to generate?', [])
@@ -284,6 +288,7 @@ it('creates env file from example if it does not exist', function () {
 
     $this->artisan(InitCommand::class)
         ->expectsQuestion('Enter your Lettr API key', 'new_key')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
         ->expectsQuestion('Which type-safe classes do you want to generate?', [])
@@ -330,6 +335,7 @@ it('replaces existing api key in env file', function () {
 
     $this->artisan(InitCommand::class)
         ->expectsQuestion('Enter your Lettr API key', 'new_key')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
         ->expectsQuestion('Which type-safe classes do you want to generate?', [])
@@ -374,17 +380,66 @@ it('skips type generation when user keeps existing templates locally', function 
         ->with($envPath)
         ->andReturn("LETTR_API_KEY=test_key\n");
 
+    // No .env write expected since nothing changed
     $this->filesystem
-        ->shouldReceive('put')
-        ->with($envPath, Mockery::any())
-        ->once();
+        ->shouldNotReceive('put')
+        ->with($envPath, Mockery::any());
 
-    // When user keeps templates locally, they get asked if they want to set MAIL_MAILER=lettr
+    // MAIL_MAILER is asked early with other config settings
     $this->artisan(InitCommand::class)
         ->expectsConfirmation('An API key is already configured. Do you want to replace it?', 'no')
         ->expectsConfirmation('config/lettr.php already exists. Overwrite it?', 'no')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'yes')
         ->expectsConfirmation('Do you want to keep your templates in the codebase?', 'yes')
-        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
+        ->assertSuccessful();
+});
+
+it('skips mail mailer prompt when already set to lettr', function () {
+    config()->set('lettr.api_key', 'test_key');
+    config()->set('mail.default', 'lettr');
+
+    $envPath = base_path('.env');
+    $configPath = config_path('lettr.php');
+    $mailConfigPath = config_path('mail.php');
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($configPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($mailConfigPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($mailConfigPath)
+        ->andReturn("<?php\n\nreturn [\n    'mailers' => [\n        'lettr' => [],\n    ],\n];");
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($envPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($envPath)
+        ->andReturn("LETTR_API_KEY=test_key\nMAIL_MAILER=lettr\n");
+
+    // No .env write expected since nothing changed
+    $this->filesystem
+        ->shouldNotReceive('put')
+        ->with($envPath, Mockery::any());
+
+    // MAIL_MAILER prompt should be skipped since it's already 'lettr'
+    $this->artisan(InitCommand::class)
+        ->expectsConfirmation('An API key is already configured. Do you want to replace it?', 'no')
+        ->expectsConfirmation('config/lettr.php already exists. Overwrite it?', 'no')
+        // No MAIL_MAILER confirmation here - it should be skipped
+        ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
+        ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
+        ->expectsQuestion('Which type-safe classes do you want to generate?', [])
         ->assertSuccessful();
 });
