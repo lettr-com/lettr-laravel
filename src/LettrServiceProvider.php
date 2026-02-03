@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ServiceProvider;
 use Lettr\Laravel\Console\GenerateDtosCommand;
 use Lettr\Laravel\Console\GenerateEnumCommand;
+use Lettr\Laravel\Console\InitCommand;
 use Lettr\Laravel\Console\PullCommand;
 use Lettr\Laravel\Console\PushCommand;
 use Lettr\Laravel\Exceptions\ApiKeyIsMissing;
@@ -90,13 +91,12 @@ class LettrServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton('lettr', function (): LettrManager {
-            /** @var Lettr $lettr */
-            $lettr = $this->app->make(Lettr::class);
-
             $defaultProjectId = config('lettr.default_project_id');
 
+            // Pass a resolver closure instead of the resolved client
+            // This defers API key validation until the client is actually used
             return new LettrManager(
-                $lettr,
+                fn (): Lettr => $this->app->make(Lettr::class),
                 is_numeric($defaultProjectId) ? (int) $defaultProjectId : null,
             );
         });
@@ -125,6 +125,7 @@ class LettrServiceProvider extends ServiceProvider
             $this->commands([
                 GenerateDtosCommand::class,
                 GenerateEnumCommand::class,
+                InitCommand::class,
                 PullCommand::class,
                 PushCommand::class,
             ]);

@@ -16,9 +16,14 @@ abstract class LettrMailable extends Mailable
     use SerializesModels;
 
     /**
-     * The Lettr template slug.
+     * The Lettr template slug (for API template mode).
      */
     protected ?string $templateSlug = null;
+
+    /**
+     * The Blade view for this email (for Blade view mode).
+     */
+    protected ?string $bladeView = null;
 
     /**
      * The Lettr template version.
@@ -94,8 +99,39 @@ abstract class LettrMailable extends Mailable
      */
     public function content(): Content
     {
-        // Return empty content - templates don't need views
+        // If Blade view is set, use view rendering
+        if ($this->bladeView !== null) {
+            return new Content(
+                view: $this->bladeView,
+                with: $this->buildViewData(),
+            );
+        }
+
+        // API template mode - return empty content
         return new Content;
+    }
+
+    /**
+     * Build the view data array for Blade rendering.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildViewData(): array
+    {
+        return array_merge(parent::buildViewData(), $this->withMergeTags());
+    }
+
+    /**
+     * Get the merge tags for the template.
+     *
+     * Override this method in subclasses to provide merge tag data.
+     * This is automatically called during build() and merged with substitutionData.
+     *
+     * @return array<string, mixed>
+     */
+    public function withMergeTags(): array
+    {
+        return [];
     }
 
     /**
@@ -103,8 +139,19 @@ abstract class LettrMailable extends Mailable
      */
     public function build(): static
     {
-        // Use the lettr mailer/transport
+        // If using Blade view, skip Lettr-specific setup
+        if ($this->bladeView !== null) {
+            return $this;
+        }
+
+        // Use the lettr mailer/transport for API template mode
         $this->mailer('lettr');
+
+        // Merge data from withMergeTags() with any manually set substitution data
+        $mergeTags = $this->withMergeTags();
+        if (! empty($mergeTags)) {
+            $this->substitutionData = array_merge($mergeTags, $this->substitutionData);
+        }
 
         // Set placeholder HTML - the actual content comes from the Lettr template
         // This is required because Laravel's Mailer expects some content

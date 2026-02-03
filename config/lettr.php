@@ -32,14 +32,15 @@ return [
     | Template Paths
     |--------------------------------------------------------------------------
     |
-    | Configure where pulled templates and generated Mailables should be saved.
-    | The blade_path is where template HTML files will be stored as Blade views.
+    | Configure where pulled templates and generated files should be saved.
+    | The html_path is where template HTML files will be stored.
     | The mailable_path and mailable_namespace are used when generating Mailable
     | classes with the --with-mailables option.
     |
     */
 
     'templates' => [
+        'html_path' => resource_path('templates/lettr'),
         'blade_path' => resource_path('views/emails/lettr'),
         'mailable_path' => app_path('Mail/Lettr'),
         'mailable_namespace' => 'App\\Mail\\Lettr',

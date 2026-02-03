@@ -25,7 +25,38 @@ Publish the configuration file:
 php artisan vendor:publish --tag=lettr-config
 ```
 
-Add your [Lettr API key](https://app.lettr.com) to your `.env` file:
+## Getting Started
+
+The easiest way to set up Lettr in your Laravel application is using the interactive init command:
+
+```bash
+php artisan lettr:init
+```
+
+This command will guide you through:
+
+- **API Key Configuration** - Automatically adds your Lettr API key to `.env`
+- **Mailer Setup** - Configures the Lettr mailer in `config/mail.php`
+- **Template Download** - Optionally pulls your email templates as Blade files
+- **Code Generation** - Generates type-safe DTOs, Mailables, and template enums
+- **Domain Verification** - Checks your sending domain is properly configured
+
+After running `lettr:init`, you're ready to send emails:
+
+```php
+use Illuminate\Support\Facades\Mail;
+use App\Mail\Lettr\WelcomeEmail;
+
+// Using a generated Mailable
+Mail::to('user@example.com')->send(new WelcomeEmail($data));
+
+// Or send templates inline
+Mail::lettr()->to('user@example.com')->sendTemplate('welcome-email', $data);
+```
+
+## Manual Setup
+
+If you prefer to configure manually, add your [Lettr API key](https://app.lettr.com) to your `.env` file:
 
 ```ini
 LETTR_API_KEY=your-api-key

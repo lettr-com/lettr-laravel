@@ -4,21 +4,25 @@ declare(strict_types=1);
 
 namespace {{ namespace }};
 
-use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Lettr\Laravel\Mail\LettrMailable;
+{{ dtoImport }}
 
 class {{ class }} extends LettrMailable
 {
     protected ?string $templateSlug = '{{ slug }}';
 
     /**
+     * Path to the local HTML template file (for preview/testing).
+     */
+    protected ?string $templateHtmlPath = '{{ htmlPath }}';
+
+    /**
      * Create a new message instance.
      */
-    public function __construct()
-    {
-        //
-    }
+    public function __construct(
+        {{ dtoProperty }}
+    ) {}
 
     /**
      * Get the message envelope.
@@ -29,14 +33,5 @@ class {{ class }} extends LettrMailable
             subject: '{{ subject }}',
         );
     }
-
-    /**
-     * Get the message content definition.
-     */
-    public function content(): Content
-    {
-        return new Content(
-            view: 'emails.lettr.{{ slug }}',
-        );
-    }
+{{ withMergeTagsMethod }}
 }
