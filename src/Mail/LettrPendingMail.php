@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lettr\Laravel\Mail;
 
 use Illuminate\Contracts\Mail\Mailer as MailerContract;
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Mail\PendingMail;
 use Illuminate\Mail\SentMessage;
 
@@ -21,14 +22,18 @@ class LettrPendingMail extends PendingMail
     /**
      * Send a Lettr template.
      *
-     * @param  array<string, mixed>  $substitutionData
+     * @param  array<string, mixed>|Arrayable<string, mixed>  $substitutionData
      */
     public function sendTemplate(
         string $templateSlug,
-        array $substitutionData = [],
+        array|Arrayable $substitutionData = [],
         ?int $version = null,
         ?int $projectId = null,
     ): ?SentMessage {
+        if ($substitutionData instanceof Arrayable) {
+            $substitutionData = $substitutionData->toArray();
+        }
+
         $mailable = new InlineLettrMailable(
             $templateSlug,
             $substitutionData,

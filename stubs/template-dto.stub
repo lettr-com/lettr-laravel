@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 namespace {{ namespace }};
+
+use Illuminate\Contracts\Support\Arrayable;
 {{ imports }}
-final readonly class {{ class }}
+final readonly class {{ class }} implements Arrayable
 {
 {{ docblock }}    public function __construct(
 {{ properties }}

@@ -76,11 +76,12 @@ class DtoGenerator
         $properties = $this->generateProperties($mergeTags, $className);
         $toArrayBody = $this->generateToArrayBody($mergeTags, $className);
         $docblock = $this->generateDocblock($mergeTags, $className);
+        $imports = $this->generateImports($mergeTags, $className);
 
         $stub = $this->getStubContent();
         $content = str_replace(
             ['{{ namespace }}', '{{ imports }}', '{{ class }}', '{{ docblock }}', '{{ properties }}', '{{ toArrayBody }}'],
-            [$namespace, '', $className, $docblock, $properties, $toArrayBody],
+            [$namespace, $imports, $className, $docblock, $properties, $toArrayBody],
             $stub
         );
 
@@ -111,11 +112,12 @@ class DtoGenerator
 
         $properties = $this->generateChildProperties($children);
         $toArrayBody = $this->generateChildToArrayBody($children);
+        $imports = '';
 
         $stub = $this->getStubContent();
         $content = str_replace(
             ['{{ namespace }}', '{{ imports }}', '{{ class }}', '{{ docblock }}', '{{ properties }}', '{{ toArrayBody }}'],
-            [$namespace, '', $className, '', $properties, $toArrayBody],
+            [$namespace, $imports, $className, '', $properties, $toArrayBody],
             $stub
         );
 
@@ -128,6 +130,30 @@ class DtoGenerator
             'class' => $fullyQualifiedClass,
             'path' => $relativePath,
         ];
+    }
+
+    /**
+     * Generate import statements for nested DTO classes.
+     *
+     * @param  array<int, MergeTag>  $mergeTags
+     */
+    protected function generateImports(array $mergeTags, string $parentClassName): string
+    {
+        $imports = [];
+        $namespace = config('lettr.templates.dto_namespace');
+
+        foreach ($mergeTags as $tag) {
+            if ($this->hasNestedChildren($tag)) {
+                $nestedClassName = $this->getNestedClassName($parentClassName, $tag->key);
+                $imports[] = "use {$namespace}\\{$nestedClassName};";
+            }
+        }
+
+        if (empty($imports)) {
+            return '';
+        }
+
+        return "\n".implode("\n", $imports);
     }
 
     /**

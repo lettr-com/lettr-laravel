@@ -47,3 +47,64 @@ it('works with Mail::fake()', function () {
 
     Mail::assertSent(InlineLettrMailable::class);
 });
+
+it('accepts Arrayable objects in sendTemplate', function () {
+    Mail::fake();
+
+    $dto = new class implements \Illuminate\Contracts\Support\Arrayable
+    {
+        public function toArray(): array
+        {
+            return ['name' => 'John Doe', 'email' => 'john@example.com'];
+        }
+    };
+
+    Mail::lettr()
+        ->to('test@example.com')
+        ->sendTemplate('user-welcome', $dto);
+
+    Mail::assertSent(InlineLettrMailable::class);
+});
+
+it('converts Arrayable to array before passing to InlineLettrMailable', function () {
+    Mail::fake();
+
+    $dto = new class implements \Illuminate\Contracts\Support\Arrayable
+    {
+        public function toArray(): array
+        {
+            return ['custom_key' => 'custom_value', 'count' => 42];
+        }
+    };
+
+    Mail::lettr()
+        ->to('test@example.com')
+        ->sendTemplate('data-template', $dto);
+
+    Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
+        // Verify the mailable was created with the correct substitution data
+        $reflection = new \ReflectionClass($mailable);
+        $property = $reflection->getProperty('substitutionData');
+        $property->setAccessible(true);
+        $data = $property->getValue($mailable);
+
+        return $data === ['custom_key' => 'custom_value', 'count' => 42];
+    });
+});
+
+it('still accepts plain arrays in sendTemplate', function () {
+    Mail::fake();
+
+    Mail::lettr()
+        ->to('test@example.com')
+        ->sendTemplate('plain-array-template', ['key' => 'value']);
+
+    Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
+        $reflection = new \ReflectionClass($mailable);
+        $property = $reflection->getProperty('substitutionData');
+        $property->setAccessible(true);
+        $data = $property->getValue($mailable);
+
+        return $data === ['key' => 'value'];
+    });
+});

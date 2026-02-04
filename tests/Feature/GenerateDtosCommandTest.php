@@ -596,3 +596,165 @@ it('places required properties before optional ones', function () {
     $this->artisan(GenerateDtosCommand::class)
         ->assertSuccessful();
 });
+
+it('generates dtos that implement Arrayable interface', function () {
+    $templates = [createDtoTemplate(1, 'Arrayable Test', 'arrayable-test')];
+    $templateDetail = createDtoTemplateDetail(1, 'Arrayable Test', 'arrayable-test');
+    $mergeTags = [
+        new MergeTag(key: 'name', required: true, type: 'string'),
+        new MergeTag(key: 'age', required: false, type: 'integer'),
+    ];
+
+    $this->templateService
+        ->shouldReceive('list')
+        ->once()
+        ->andReturn(createDtoListResponse($templates));
+
+    $this->templateService
+        ->shouldReceive('get')
+        ->with('arrayable-test', null)
+        ->once()
+        ->andReturn($templateDetail);
+
+    $this->templateService
+        ->shouldReceive('getMergeTags')
+        ->with('arrayable-test', null, 1)
+        ->once()
+        ->andReturn(createMergeTagsResponse('arrayable-test', $mergeTags));
+
+    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
+    $this->filesystem
+        ->shouldReceive('get')
+        ->once()
+        ->andReturn(file_get_contents(__DIR__.'/../../stubs/template-dto.stub'));
+
+    $this->filesystem
+        ->shouldReceive('put')
+        ->once()
+        ->withArgs(function ($path, $content) {
+            return str_contains($content, 'use Illuminate\Contracts\Support\Arrayable;')
+                && str_contains($content, 'final readonly class ArrayableTestData implements Arrayable')
+                && str_contains($content, 'public function toArray(): array');
+        });
+
+    $this->artisan(GenerateDtosCommand::class)
+        ->assertSuccessful();
+});
+
+it('generates nested dtos that also implement Arrayable interface', function () {
+    $templates = [createDtoTemplate(1, 'Nested Arrayable', 'nested-arrayable')];
+    $templateDetail = createDtoTemplateDetail(1, 'Nested Arrayable', 'nested-arrayable');
+    $mergeTags = [
+        new MergeTag(
+            key: 'items',
+            required: true,
+            type: 'array',
+            children: [
+                new MergeTagChild(key: 'product_name', type: 'string'),
+                new MergeTagChild(key: 'quantity', type: 'integer'),
+            ]
+        ),
+    ];
+
+    $this->templateService
+        ->shouldReceive('list')
+        ->once()
+        ->andReturn(createDtoListResponse($templates));
+
+    $this->templateService
+        ->shouldReceive('get')
+        ->with('nested-arrayable', null)
+        ->once()
+        ->andReturn($templateDetail);
+
+    $this->templateService
+        ->shouldReceive('getMergeTags')
+        ->with('nested-arrayable', null, 1)
+        ->once()
+        ->andReturn(createMergeTagsResponse('nested-arrayable', $mergeTags));
+
+    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
+    $this->filesystem
+        ->shouldReceive('get')
+        ->andReturn(file_get_contents(__DIR__.'/../../stubs/template-dto.stub'));
+
+    $writtenFiles = [];
+    $this->filesystem
+        ->shouldReceive('put')
+        ->twice()
+        ->withArgs(function ($path, $content) use (&$writtenFiles) {
+            $writtenFiles[$path] = $content;
+
+            return true;
+        });
+
+    $this->artisan(GenerateDtosCommand::class)
+        ->assertSuccessful();
+
+    // Verify both main and nested DTOs implement Arrayable
+    foreach ($writtenFiles as $path => $content) {
+        expect($content)
+            ->toContain('use Illuminate\Contracts\Support\Arrayable;')
+            ->toContain('implements Arrayable')
+            ->toContain('public function toArray(): array');
+    }
+});
+
+it('includes proper imports for nested dto classes', function () {
+    $templates = [createDtoTemplate(1, 'Import Test', 'import-test')];
+    $templateDetail = createDtoTemplateDetail(1, 'Import Test', 'import-test');
+    $mergeTags = [
+        new MergeTag(
+            key: 'orders',
+            required: true,
+            type: 'array',
+            children: [
+                new MergeTagChild(key: 'order_id', type: 'integer'),
+            ]
+        ),
+    ];
+
+    $this->templateService
+        ->shouldReceive('list')
+        ->once()
+        ->andReturn(createDtoListResponse($templates));
+
+    $this->templateService
+        ->shouldReceive('get')
+        ->with('import-test', null)
+        ->once()
+        ->andReturn($templateDetail);
+
+    $this->templateService
+        ->shouldReceive('getMergeTags')
+        ->with('import-test', null, 1)
+        ->once()
+        ->andReturn(createMergeTagsResponse('import-test', $mergeTags));
+
+    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
+    $this->filesystem
+        ->shouldReceive('get')
+        ->andReturn(file_get_contents(__DIR__.'/../../stubs/template-dto.stub'));
+
+    $writtenFiles = [];
+    $this->filesystem
+        ->shouldReceive('put')
+        ->twice()
+        ->withArgs(function ($path, $content) use (&$writtenFiles) {
+            $writtenFiles[$path] = $content;
+
+            return true;
+        });
+
+    $this->artisan(GenerateDtosCommand::class)
+        ->assertSuccessful();
+
+    // Find the main DTO (not the nested one)
+    $mainPath = collect($writtenFiles)->keys()->first(fn ($p) => str_ends_with($p, 'ImportTestData.php') && ! str_contains($p, 'OrderData'));
+    expect($mainPath)->not->toBeNull();
+
+    // Verify it imports the nested DTO class
+    expect($writtenFiles[$mainPath])
+        ->toContain('use App\Dto\Lettr\ImportTestDataOrderData;')
+        ->toContain('use Illuminate\Contracts\Support\Arrayable;');
+});
