@@ -41,6 +41,8 @@ This command will guide you through:
 - **Code Generation** - Generates type-safe DTOs, Mailables, and template enums
 - **Domain Verification** - Checks your sending domain is properly configured
 
+> **Tip:** If you already have a verified sending domain in your [Lettr account](https://app.lettr.com/domains/sending), the init command will automatically configure your `MAIL_FROM_ADDRESS` to match it.
+
 After running `lettr:init`, you're ready to send emails:
 
 ```php
@@ -61,6 +63,19 @@ If you prefer to configure manually, add your [Lettr API key](https://app.lettr.
 ```ini
 LETTR_API_KEY=your-api-key
 ```
+
+### Sending Domain
+
+To send emails through Lettr, you must have a verified sending domain in your [Lettr account](https://app.lettr.com/domains/sending). Your `MAIL_FROM_ADDRESS` (or any "from" address you use) must match a verified domain.
+
+For example, if you've verified `example.com` in Lettr:
+
+```ini
+MAIL_FROM_ADDRESS=hello@example.com
+MAIL_FROM_NAME="My App"
+```
+
+Emails sent from addresses on unverified domains will be rejected.
 
 ## Quick Start
 

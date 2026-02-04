@@ -202,7 +202,8 @@ class InitCommand extends Command
 
         if (! $hasSendingDomain) {
             $this->line('  <fg=yellow>⚠</> <fg=yellow>No verified sending domain found.</>');
-            $this->line('    Set up your domain: '.$this->hyperlink('https://app.lettr.com/domains/sending', 'https://app.lettr.com/domains/sending'));
+            $this->line('    1. Set up your domain: '.$this->hyperlink('https://app.lettr.com/domains/sending', 'https://app.lettr.com/domains/sending'));
+            $this->line('    2. Then update <fg=cyan>MAIL_FROM_ADDRESS</> in your <fg=cyan>.env</> to match');
             $this->newLine();
         }
 
