@@ -145,7 +145,7 @@ class InitCommand extends Command
         // Step 6: Template workflow
         $keptLocalTemplates = $this->handleTemplateWorkflow();
 
-        // Step 8: Setup sending domain (silently fetch, skip if fails)
+        // Step 7: Setup sending domain (silently fetch, skip if fails)
         $domainOptions = $this->fetchDomains();
         $hasSendingDomain = false;
         if ($domainOptions !== null) {
@@ -153,7 +153,7 @@ class InitCommand extends Command
             $hasSendingDomain = true;
         }
 
-        // Step 9: Fetch a sample template for personalized examples
+        // Step 8: Fetch a sample template for personalized examples
         $this->fetchSampleTemplate();
 
         // Final success message
