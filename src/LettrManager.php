@@ -9,6 +9,7 @@ use Lettr\Laravel\Services\TemplateServiceWrapper;
 use Lettr\Lettr;
 use Lettr\Services\DomainService;
 use Lettr\Services\EmailService;
+use Lettr\Services\HealthService;
 use Lettr\Services\WebhookService;
 
 /**
@@ -70,6 +71,14 @@ class LettrManager
     }
 
     /**
+     * Get the health service.
+     */
+    public function health(): HealthService
+    {
+        return $this->lettr()->health();
+    }
+
+    /**
      * Get the template service wrapper with default project ID support.
      */
     public function templates(): TemplateServiceWrapper
@@ -102,6 +111,7 @@ class LettrManager
             'domains' => $this->domains(),
             'webhooks' => $this->webhooks(),
             'templates' => $this->templates(),
+            'health' => $this->health(),
             default => throw new \InvalidArgumentException("Unknown service: {$name}"),
         };
     }
