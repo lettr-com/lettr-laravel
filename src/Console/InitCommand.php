@@ -219,17 +219,42 @@ class InitCommand extends Command
         $existingKey = config('lettr.api_key');
 
         if (is_string($existingKey) && $existingKey !== '') {
-            if ($this->option('force') || confirm(
-                label: 'An API key is already configured. Do you want to replace it?',
-                default: false,
-            )) {
-                return $this->askForApiKey(showLink: false);
+            // Validate existing key first
+            if ($this->validateApiKey($existingKey)) {
+                if ($this->option('force') || confirm(
+                    label: 'An API key is already configured. Do you want to replace it?',
+                    default: false,
+                )) {
+                    return $this->askForApiKey(showLink: false);
+                }
+
+                return $existingKey;
             }
 
-            return $existingKey;
+            // Existing key is invalid
+            $this->components->warn('The configured API key is invalid.');
+
+            return $this->askForApiKey(showLink: true);
         }
 
         return $this->askForApiKey(showLink: true);
+    }
+
+    /**
+     * Validate an API key by calling the auth check endpoint.
+     *
+     * @return bool True if valid, false if invalid
+     */
+    protected function validateApiKey(string $apiKey): bool
+    {
+        try {
+            $response = Http::withToken($apiKey)
+                ->get('https://app.lettr.com/api/auth/check');
+
+            return $response->successful();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**
@@ -237,18 +262,25 @@ class InitCommand extends Command
      */
     protected function askForApiKey(bool $showLink = true): ?string
     {
-        $apiKey = password(
-            label: 'Enter your Lettr API key',
-            placeholder: 'lttr_xxxx',
-            required: 'An API key is required to use Lettr.',
-            hint: $showLink ? 'Get your API key at https://app.lettr.com/api-keys' : '',
-        );
+        while (true) {
+            $apiKey = password(
+                label: 'Enter your Lettr API key',
+                placeholder: 'lttr_xxxx',
+                required: 'An API key is required to use Lettr.',
+                hint: $showLink ? 'Get your API key at https://app.lettr.com/api-keys' : '',
+            );
 
-        if ($apiKey === '') {
-            return null;
+            if ($apiKey === '') {
+                return null;
+            }
+
+            if ($this->validateApiKey($apiKey)) {
+                return $apiKey;
+            }
+
+            $this->components->warn('Invalid API key. Please try again.');
+            $showLink = true; // Show link on retry
         }
-
-        return $apiKey;
     }
 
     /**

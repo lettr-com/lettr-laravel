@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Http;
 use Lettr\Laravel\Console\InitCommand;
 use Lettr\Laravel\LettrManager;
 
@@ -20,6 +21,12 @@ beforeEach(function () {
 
     // Set an empty string to simulate no API key (but not null to avoid service provider issues)
     config()->set('lettr.api_key', '');
+
+    // Mock HTTP facade to prevent real async requests in startAsyncFetches
+    \Illuminate\Support\Facades\Http::fake([
+        'https://app.lettr.com/api/auth/check' => \Illuminate\Support\Facades\Http::response(['team_id' => 1], 200),
+        '*' => \Illuminate\Support\Facades\Http::response(['data' => ['domains' => [], 'templates' => []]], 200),
+    ]);
 });
 
 it('completes setup when user has no templates and skips download', function () {
@@ -443,6 +450,198 @@ it('skips mail mailer prompt when already set to lettr', function () {
         ->expectsConfirmation('An API key is already configured. Do you want to replace it?', 'no')
         ->expectsConfirmation('config/lettr.php already exists. Overwrite it?', 'no')
         // No MAIL_MAILER confirmation here - it should be skipped
+        ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
+        ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
+        ->expectsQuestion('Which type-safe classes do you want to generate?', [])
+        ->assertSuccessful();
+});
+
+it('validates existing api key and warns if invalid', function () {
+    config()->set('lettr.api_key', 'invalid_key');
+
+    // Clear and override HTTP fake for this test - invalid_key gets 401, valid_key gets 200
+    Http::swap(new \Illuminate\Http\Client\Factory);
+    Http::fake([
+        'https://app.lettr.com/api/auth/check' => function ($request) {
+            // Check the token in the authorization header
+            $authHeader = $request->header('Authorization');
+            if (is_array($authHeader)) {
+                $authHeader = $authHeader[0] ?? '';
+            }
+
+            if (str_contains($authHeader ?? '', 'invalid_key')) {
+                return Http::response(['error' => 'Unauthorized'], 401);
+            }
+
+            return Http::response(['team_id' => 1], 200);
+        },
+        'https://app.lettr.com/api/domains' => Http::response(['data' => ['domains' => []]], 200),
+        'https://app.lettr.com/api/templates*' => Http::response(['data' => ['templates' => []]], 200),
+        '*' => Http::response(['data' => []], 200),
+    ]);
+
+    $envPath = base_path('.env');
+    $configPath = config_path('lettr.php');
+    $mailConfigPath = config_path('mail.php');
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($configPath)
+        ->andReturn(false);
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($mailConfigPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($mailConfigPath)
+        ->andReturn("<?php\n\nreturn [\n    'mailers' => [\n    ],\n];");
+
+    $this->filesystem
+        ->shouldReceive('put')
+        ->with($mailConfigPath, Mockery::any())
+        ->once();
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($envPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($envPath)
+        ->andReturn("LETTR_API_KEY=invalid_key\n");
+
+    $this->filesystem
+        ->shouldReceive('put')
+        ->with($envPath, Mockery::on(fn ($content) => str_contains($content, 'LETTR_API_KEY=valid_key')))
+        ->once();
+
+    $this->artisan(InitCommand::class)
+        ->expectsOutputToContain('The configured API key is invalid')
+        ->expectsQuestion(apiKeyQuestion(), 'valid_key')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
+        ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
+        ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
+        ->expectsQuestion('Which type-safe classes do you want to generate?', [])
+        ->assertSuccessful();
+});
+
+it('validates newly entered api key and prompts again if invalid', function () {
+    // Clear and override HTTP fake for this test - invalid_key gets 401, valid_key gets 200
+    Http::swap(new \Illuminate\Http\Client\Factory);
+    Http::fake([
+        'https://app.lettr.com/api/auth/check' => function ($request) {
+            // Check the token in the authorization header
+            $authHeader = $request->header('Authorization');
+            if (is_array($authHeader)) {
+                $authHeader = $authHeader[0] ?? '';
+            }
+
+            if (str_contains($authHeader ?? '', 'invalid_key')) {
+                return Http::response(['error' => 'Unauthorized'], 401);
+            }
+
+            return Http::response(['team_id' => 1], 200);
+        },
+        'https://app.lettr.com/api/domains' => Http::response(['data' => ['domains' => []]], 200),
+        'https://app.lettr.com/api/templates*' => Http::response(['data' => ['templates' => []]], 200),
+        '*' => Http::response(['data' => []], 200),
+    ]);
+
+    $envPath = base_path('.env');
+    $configPath = config_path('lettr.php');
+    $mailConfigPath = config_path('mail.php');
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($configPath)
+        ->andReturn(false);
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($mailConfigPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($mailConfigPath)
+        ->andReturn("<?php\n\nreturn [\n    'mailers' => [\n    ],\n];");
+
+    $this->filesystem
+        ->shouldReceive('put')
+        ->with($mailConfigPath, Mockery::any())
+        ->once();
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($envPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($envPath)
+        ->andReturn("APP_NAME=Laravel\n");
+
+    $this->filesystem
+        ->shouldReceive('put')
+        ->with($envPath, Mockery::on(fn ($content) => str_contains($content, 'LETTR_API_KEY=valid_key')))
+        ->once();
+
+    $this->artisan(InitCommand::class)
+        ->expectsQuestion(apiKeyQuestion(), 'invalid_key')
+        ->expectsOutputToContain('Invalid API key')
+        ->expectsQuestion(apiKeyQuestion(), 'valid_key')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
+        ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
+        ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
+        ->expectsQuestion('Which type-safe classes do you want to generate?', [])
+        ->assertSuccessful();
+});
+
+it('proceeds normally with valid existing api key', function () {
+    config()->set('lettr.api_key', 'valid_key');
+
+    $envPath = base_path('.env');
+    $configPath = config_path('lettr.php');
+    $mailConfigPath = config_path('mail.php');
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($configPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($mailConfigPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($mailConfigPath)
+        ->andReturn("<?php\n\nreturn [\n    'mailers' => [\n        'lettr' => [],\n    ],\n];");
+
+    $this->filesystem
+        ->shouldReceive('exists')
+        ->with($envPath)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($envPath)
+        ->andReturn("LETTR_API_KEY=valid_key\n");
+
+    // No .env write expected since user chose not to replace API key
+    $this->filesystem
+        ->shouldNotReceive('put')
+        ->with($envPath, Mockery::any());
+
+    $this->artisan(InitCommand::class)
+        ->expectsConfirmation('An API key is already configured. Do you want to replace it?', 'no')
+        ->expectsConfirmation('config/lettr.php already exists. Overwrite it?', 'no')
+        ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'no')
         ->expectsConfirmation('Do you want to download templates from your Lettr account?', 'no')
         ->expectsQuestion('Which type-safe classes do you want to generate?', [])
