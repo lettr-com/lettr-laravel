@@ -19,9 +19,14 @@ final class InlineLettrMailable extends LettrMailable
         array $substitutionData = [],
         ?int $version = null,
         ?int $projectId = null,
+        ?string $campaignId = null,
     ) {
         $this->template($templateSlug, $version, $projectId);
         $this->substitutionData($substitutionData);
+
+        if ($campaignId !== null) {
+            $this->campaignId($campaignId);
+        }
     }
 
     public function build(): static

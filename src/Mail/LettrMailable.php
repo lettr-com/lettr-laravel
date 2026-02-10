@@ -36,6 +36,13 @@ abstract class LettrMailable extends Mailable
     protected ?int $projectId = null;
 
     /**
+     * The campaign ID for tracking.
+     * If null and using template slug, server uses template slug as campaign ID.
+     * If null and not using template slug, auto-generates from mailable class name.
+     */
+    protected ?string $campaignId = null;
+
+    /**
      * The substitution data for the template.
      *
      * @var array<string, mixed>
@@ -70,6 +77,17 @@ abstract class LettrMailable extends Mailable
     public function projectId(int $projectId): static
     {
         $this->projectId = $projectId;
+
+        return $this;
+    }
+
+    /**
+     * Set the campaign ID for tracking.
+     * Overrides the default behavior (template slug as campaign or auto-generated from class name).
+     */
+    public function campaignId(string $campaignId): static
+    {
+        $this->campaignId = $campaignId;
 
         return $this;
     }
@@ -179,8 +197,31 @@ abstract class LettrMailable extends Mailable
                     base64_encode(json_encode($this->substitutionData, JSON_THROW_ON_ERROR))
                 );
             }
+
+            // Add campaign ID header:
+            // - If explicitly set by user, use that
+            // - If using template slug and no override, skip (server uses template slug as campaign)
+            // - If not using template slug, auto-generate from mailable class name
+            if ($this->campaignId !== null) {
+                $message->getHeaders()->addTextHeader('X-Lettr-Campaign-Id', $this->campaignId);
+            } elseif ($this->templateSlug === null) {
+                // Auto-generate campaign ID from mailable class name
+                $message->getHeaders()->addTextHeader('X-Lettr-Campaign-Id', $this->generateCampaignId());
+            }
         });
 
         return $this;
+    }
+
+    /**
+     * Generate a campaign ID from the mailable class name.
+     * Converts "App\Mail\OrderConfirmation" to "order-confirmation".
+     */
+    protected function generateCampaignId(): string
+    {
+        $className = class_basename(static::class);
+
+        // Convert PascalCase to kebab-case
+        return strtolower(preg_replace('/(?<!^)[A-Z]/', '-$0', $className) ?? $className);
     }
 }

@@ -60,6 +60,12 @@ class LettrTransportFactory extends AbstractTransport
                 $this->configureContent($builder, $email);
             }
 
+            // Set campaign ID if provided
+            $campaignId = $this->getHeader($email, 'X-Lettr-Campaign-Id');
+            if ($campaignId !== null) {
+                $builder->campaignId($campaignId);
+            }
+
             // Add CC recipients
             $cc = $email->getCc();
             if (count($cc) > 0) {
