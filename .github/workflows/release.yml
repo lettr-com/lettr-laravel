@@ -37,6 +37,8 @@ jobs:
   release:
     needs: tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     name: Create Release
 
