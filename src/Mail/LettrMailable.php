@@ -36,13 +36,6 @@ abstract class LettrMailable extends Mailable
     protected ?int $projectId = null;
 
     /**
-     * The campaign ID for tracking.
-     * If null and using template slug, server uses template slug as campaign ID.
-     * If null and not using template slug, auto-generates from mailable class name.
-     */
-    protected ?string $campaignId = null;
-
-    /**
      * The substitution data for the template.
      *
      * @var array<string, mixed>
@@ -77,17 +70,6 @@ abstract class LettrMailable extends Mailable
     public function projectId(int $projectId): static
     {
         $this->projectId = $projectId;
-
-        return $this;
-    }
-
-    /**
-     * Set the campaign ID for tracking.
-     * Overrides the default behavior (template slug as campaign or auto-generated from class name).
-     */
-    public function campaignId(string $campaignId): static
-    {
-        $this->campaignId = $campaignId;
 
         return $this;
     }
@@ -198,15 +180,14 @@ abstract class LettrMailable extends Mailable
                 );
             }
 
-            // Add campaign ID header:
-            // - If explicitly set by user, use that
-            // - If using template slug and no override, skip (server uses template slug as campaign)
+            // Add tag header:
+            // - If tags set by user, join with _ and use that
+            // - If using template slug and no tags, skip (server uses template slug as tag)
             // - If not using template slug, auto-generate from mailable class name
-            if ($this->campaignId !== null) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Campaign-Id', $this->campaignId);
+            if (count($this->tags) > 0) {
+                $message->getHeaders()->addTextHeader('X-Lettr-Tag', implode('_', $this->tags));
             } elseif ($this->templateSlug === null) {
-                // Auto-generate campaign ID from mailable class name
-                $message->getHeaders()->addTextHeader('X-Lettr-Campaign-Id', $this->generateCampaignId());
+                $message->getHeaders()->addTextHeader('X-Lettr-Tag', $this->generateTag());
             }
         });
 
@@ -214,10 +195,10 @@ abstract class LettrMailable extends Mailable
     }
 
     /**
-     * Generate a campaign ID from the mailable class name.
+     * Generate a tag from the mailable class name.
      * Converts "App\Mail\OrderConfirmation" to "order-confirmation".
      */
-    protected function generateCampaignId(): string
+    protected function generateTag(): string
     {
         $className = class_basename(static::class);
 

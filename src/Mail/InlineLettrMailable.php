@@ -19,13 +19,13 @@ final class InlineLettrMailable extends LettrMailable
         array $substitutionData = [],
         ?int $version = null,
         ?int $projectId = null,
-        ?string $campaignId = null,
+        ?string $tag = null,
     ) {
         $this->template($templateSlug, $version, $projectId);
         $this->substitutionData($substitutionData);
 
-        if ($campaignId !== null) {
-            $this->campaignId($campaignId);
+        if ($tag !== null) {
+            parent::tag($tag);
         }
     }
 

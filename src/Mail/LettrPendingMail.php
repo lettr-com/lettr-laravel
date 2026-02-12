@@ -23,14 +23,14 @@ class LettrPendingMail extends PendingMail
      * Send a Lettr template.
      *
      * @param  array<string, mixed>|Arrayable<string, mixed>  $substitutionData
-     * @param  string|null  $campaignId  Override the default campaign ID (template slug). If null, server uses template slug.
+     * @param  string|null  $tag  Override the default tag (template slug). If null, server uses template slug.
      */
     public function sendTemplate(
         string $templateSlug,
         array|Arrayable $substitutionData = [],
         ?int $version = null,
         ?int $projectId = null,
-        ?string $campaignId = null,
+        ?string $tag = null,
     ): ?SentMessage {
         if ($substitutionData instanceof Arrayable) {
             $substitutionData = $substitutionData->toArray();
@@ -41,7 +41,7 @@ class LettrPendingMail extends PendingMail
             $substitutionData,
             $version,
             $projectId,
-            $campaignId,
+            $tag,
         );
 
         return $this->send($mailable);
