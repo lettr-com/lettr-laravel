@@ -7,6 +7,7 @@ namespace Lettr\Laravel;
 use Illuminate\Mail\Mailer;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ServiceProvider;
+use Lettr\Laravel\Console\CheckCommand;
 use Lettr\Laravel\Console\GenerateDtosCommand;
 use Lettr\Laravel\Console\GenerateEnumCommand;
 use Lettr\Laravel\Console\InitCommand;
@@ -123,6 +124,7 @@ class LettrServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->commands([
+                CheckCommand::class,
                 GenerateDtosCommand::class,
                 GenerateEnumCommand::class,
                 InitCommand::class,
