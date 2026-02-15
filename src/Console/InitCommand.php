@@ -171,7 +171,6 @@ class InitCommand extends Command
 
         if ($keptLocalTemplates) {
             $this->line('  Your emails will be sent through Lettr.');
-            $this->line('  Templates remain in your codebase for version control.');
         } else {
             // Use sample template for personalized examples, or fall back to generic
             $slug = $this->sampleTemplate['slug'] ?? 'welcome';
