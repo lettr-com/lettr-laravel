@@ -15,7 +15,7 @@ it('can chain to and sendTemplate methods', function () {
 
     Mail::lettr()
         ->to('test@example.com')
-        ->sendTemplate('welcome-email', ['name' => 'John']);
+        ->sendTemplate('welcome-email', substitutionData: ['name' => 'John']);
 
     Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
         return $mailable->hasTo('test@example.com');
@@ -29,7 +29,7 @@ it('can use cc and bcc with sendTemplate', function () {
         ->to('test@example.com')
         ->cc('cc@example.com')
         ->bcc('bcc@example.com')
-        ->sendTemplate('order-confirmation', ['order_id' => 123]);
+        ->sendTemplate('order-confirmation', substitutionData: ['order_id' => 123]);
 
     Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
         return $mailable->hasTo('test@example.com')
@@ -43,7 +43,7 @@ it('works with Mail::fake()', function () {
 
     Mail::lettr()
         ->to('user@example.com')
-        ->sendTemplate('test-template', ['foo' => 'bar']);
+        ->sendTemplate('test-template', substitutionData: ['foo' => 'bar']);
 
     Mail::assertSent(InlineLettrMailable::class);
 });
@@ -61,7 +61,7 @@ it('accepts Arrayable objects in sendTemplate', function () {
 
     Mail::lettr()
         ->to('test@example.com')
-        ->sendTemplate('user-welcome', $dto);
+        ->sendTemplate('user-welcome', substitutionData: $dto);
 
     Mail::assertSent(InlineLettrMailable::class);
 });
@@ -79,7 +79,7 @@ it('converts Arrayable to array before passing to InlineLettrMailable', function
 
     Mail::lettr()
         ->to('test@example.com')
-        ->sendTemplate('data-template', $dto);
+        ->sendTemplate('data-template', substitutionData: $dto);
 
     Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
         // Verify the mailable was created with the correct substitution data
@@ -97,7 +97,7 @@ it('still accepts plain arrays in sendTemplate', function () {
 
     Mail::lettr()
         ->to('test@example.com')
-        ->sendTemplate('plain-array-template', ['key' => 'value']);
+        ->sendTemplate('plain-array-template', substitutionData: ['key' => 'value']);
 
     Mail::assertSent(InlineLettrMailable::class, function ($mailable) {
         $reflection = new \ReflectionClass($mailable);

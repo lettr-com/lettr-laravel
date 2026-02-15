@@ -16,16 +16,20 @@ final class InlineLettrMailable extends LettrMailable
      */
     public function __construct(
         string $templateSlug,
+        ?string $subject = null,
         array $substitutionData = [],
         ?int $version = null,
-        ?int $projectId = null,
         ?string $tag = null,
     ) {
-        $this->template($templateSlug, $version, $projectId);
+        $this->template($templateSlug, $version);
         $this->substitutionData($substitutionData);
 
         if ($tag !== null) {
             parent::tag($tag);
+        }
+
+        if ($subject !== null) {
+            $this->subject = $subject;
         }
     }
 
