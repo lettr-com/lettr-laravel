@@ -14,7 +14,7 @@
         "php": "^8.4",
         "illuminate/http": "^10.0|^11.0|^12.0",
         "illuminate/support": "^10.0|^11.0|^12.0",
-        "lettr/lettr-php": "^0.8.0",
+        "lettr/lettr-php": "^1.0.0",
         "symfony/mailer": "^6.2|^7.0"
     },
     "require-dev": {
