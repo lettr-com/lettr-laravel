@@ -388,6 +388,8 @@ PHP;
             ->get('https://app.lettr.com/api/domains');
         $this->domainsPromise = $domainsPromise;
 
+        usleep(300_000);
+
         /** @var PromiseInterface $templatesPromise */
         $templatesPromise = Http::async()
             ->withToken($apiKey)
@@ -589,6 +591,7 @@ PHP;
         // Push templates to Lettr
         $this->newLine();
         $this->call('lettr:push');
+        usleep(500_000);
         $this->newLine();
 
         // Offer to generate type-safe classes
@@ -658,6 +661,7 @@ PHP;
         if ($wantsEnum) {
             $this->generatedEnum = true;
             $this->call('lettr:generate-enum');
+            usleep(500_000);
             $this->newLine();
         }
 
@@ -681,6 +685,7 @@ PHP;
             $this->call('lettr:pull', $pullOptions);
         } elseif ($wantsDtos) {
             // Only DTOs requested (no mailables)
+            usleep(500_000);
             $this->call('lettr:generate-dtos');
         }
 
