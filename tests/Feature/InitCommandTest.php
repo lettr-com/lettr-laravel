@@ -403,7 +403,6 @@ it('skips type generation when user keeps existing templates locally', function 
         ->expectsConfirmation('config/lettr.php already exists. Overwrite it?', 'no')
         ->expectsConfirmation('Set MAIL_MAILER=lettr in your .env?', 'no')
         ->expectsConfirmation('Do you have existing email templates in your codebase?', 'yes')
-        ->expectsConfirmation('Do you want to keep your templates in the codebase?', 'yes')
         ->assertSuccessful();
 });
 

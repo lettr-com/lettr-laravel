@@ -577,28 +577,7 @@ PHP;
      */
     protected function handleExistingTemplates(): bool
     {
-        $keepLocal = confirm(
-            label: 'Do you want to keep your templates in the codebase?',
-            default: true,
-            hint: 'Choose "No" to push them to Lettr and manage them there',
-        );
-
-        if ($keepLocal) {
-            // User wants to keep templates local - no Lettr sync needed
-            return true;
-        }
-
-        // Push templates to Lettr
-        $this->newLine();
-        $this->call('lettr:push');
-        usleep(500_000);
-        $this->newLine();
-
-        // Offer to generate type-safe classes
-        // Templates are already local, no need to download, but use Blade mode
-        $this->offerTypeGeneration(downloadTemplates: false, useBladeMode: true);
-
-        return false;
+        return true;
     }
 
     /**
