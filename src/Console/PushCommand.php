@@ -9,6 +9,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Lettr\Dto\Template\CreatedTemplate;
 use Lettr\Dto\Template\CreateTemplateData;
+use Lettr\Laravel\Concerns\ThrottlesApiRequests;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Support\BladeToSparkpostConverter;
 
@@ -18,6 +19,8 @@ use function Laravel\Prompts\text;
 
 class PushCommand extends Command
 {
+    use ThrottlesApiRequests;
+
     /**
      * The name and signature of the console command.
      *
@@ -234,7 +237,7 @@ class PushCommand extends Command
         $slug = $baseSlug;
         $counter = 1;
 
-        while ($this->lettr->templates()->slugExists($slug)) {
+        while ($this->withRateLimitRetry(fn () => $this->lettr->templates()->slugExists($slug))) {
             $slug = "{$baseSlug}-{$counter}";
             $counter++;
         }
@@ -253,7 +256,7 @@ class PushCommand extends Command
             html: $html,
         );
 
-        return $this->lettr->templates()->create($data);
+        return $this->withRateLimitRetry(fn () => $this->lettr->templates()->create($data));
     }
 
     /**

@@ -11,6 +11,7 @@ use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Dto\Template\MergeTag;
 use Lettr\Dto\Template\Template;
 use Lettr\Dto\Template\TemplateDetail;
+use Lettr\Laravel\Concerns\ThrottlesApiRequests;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Support\DtoGenerator;
 use Lettr\Laravel\Support\SparkpostToBladeConverter;
@@ -19,6 +20,8 @@ use function Laravel\Prompts\progress;
 
 class PullCommand extends Command
 {
+    use ThrottlesApiRequests;
+
     /**
      * The name and signature of the console command.
      *
@@ -106,7 +109,7 @@ class PullCommand extends Command
      */
     protected function fetchTemplates(?string $templateSlug): array
     {
-        $response = $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100));
+        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100)));
         $templates = $response->templates->all();
 
         // Filter by slug if specified
@@ -153,7 +156,7 @@ class PullCommand extends Command
     protected function processTemplate(Template $template, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates): void
     {
         // Fetch full template details to get the HTML
-        $detail = $this->lettr->templates()->get($template->slug);
+        $detail = $this->withRateLimitRetry(fn () => $this->lettr->templates()->get($template->slug));
 
         // Skip templates without HTML (only relevant when downloading)
         if (! $skipTemplates && empty($detail->html)) {
@@ -208,7 +211,7 @@ class PullCommand extends Command
             return [];
         }
 
-        $response = $this->lettr->templates()->getMergeTags($detail->slug, null, $detail->activeVersion);
+        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->getMergeTags($detail->slug, null, $detail->activeVersion));
 
         return $response->mergeTags;
     }

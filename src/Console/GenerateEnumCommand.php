@@ -9,12 +9,15 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Dto\Template\Template;
+use Lettr\Laravel\Concerns\ThrottlesApiRequests;
 use Lettr\Laravel\LettrManager;
 
 use function Laravel\Prompts\progress;
 
 class GenerateEnumCommand extends Command
 {
+    use ThrottlesApiRequests;
+
     /**
      * The name and signature of the console command.
      *
@@ -68,7 +71,7 @@ class GenerateEnumCommand extends Command
      */
     protected function fetchTemplates(): array
     {
-        $response = $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100));
+        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100)));
 
         return $response->templates->all();
     }

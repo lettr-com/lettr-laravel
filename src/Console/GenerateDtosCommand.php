@@ -7,6 +7,7 @@ namespace Lettr\Laravel\Console;
 use Illuminate\Console\Command;
 use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Dto\Template\Template;
+use Lettr\Laravel\Concerns\ThrottlesApiRequests;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Support\DtoGenerator;
 
@@ -14,6 +15,8 @@ use function Laravel\Prompts\progress;
 
 class GenerateDtosCommand extends Command
 {
+    use ThrottlesApiRequests;
+
     /**
      * The name and signature of the console command.
      *
@@ -83,7 +86,7 @@ class GenerateDtosCommand extends Command
      */
     protected function fetchTemplates(?string $templateSlug): array
     {
-        $response = $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100));
+        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100)));
         $templates = $response->templates->all();
 
         // Filter by slug if specified
@@ -129,7 +132,7 @@ class GenerateDtosCommand extends Command
     protected function processTemplate(Template $template, bool $dryRun): void
     {
         // Fetch template details to get the active version
-        $detail = $this->lettr->templates()->get($template->slug);
+        $detail = $this->withRateLimitRetry(fn () => $this->lettr->templates()->get($template->slug));
 
         // Skip templates without an active version
         if ($detail->activeVersion === null) {
@@ -139,7 +142,7 @@ class GenerateDtosCommand extends Command
         }
 
         // Fetch merge tags for the template using the active version
-        $response = $this->lettr->templates()->getMergeTags($template->slug, null, $detail->activeVersion);
+        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->getMergeTags($template->slug, null, $detail->activeVersion));
 
         // Skip templates without merge tags
         if (empty($response->mergeTags)) {
