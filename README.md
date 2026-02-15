@@ -56,6 +56,93 @@ Mail::to('user@example.com')->send(new WelcomeEmail($data));
 Mail::lettr()->to('user@example.com')->sendTemplate('welcome-email', $data);
 ```
 
+## CLI Commands
+
+### `lettr:check`
+
+Verify that your Lettr integration is correctly configured:
+
+```bash
+php artisan lettr:check
+```
+
+Checks mailer registration, API key validity, and sending domain verification. Returns exit code 0 if all checks pass.
+
+### `lettr:pull`
+
+Download email templates from your Lettr account as Blade files:
+
+```bash
+php artisan lettr:pull
+php artisan lettr:pull --template=welcome-email
+php artisan lettr:pull --as-html
+php artisan lettr:pull --with-mailables
+php artisan lettr:pull --dry-run
+```
+
+| Option | Description |
+|--------|-------------|
+| `--template=` | Pull only a specific template by slug |
+| `--as-html` | Save as raw HTML instead of Blade |
+| `--with-mailables` | Also generate Mailable and DTO classes |
+| `--skip-templates` | Skip downloading templates, only generate DTOs and Mailables |
+| `--dry-run` | Preview what would be downloaded |
+
+### `lettr:push`
+
+Push local Blade templates to your Lettr account:
+
+```bash
+php artisan lettr:push --path=resources/views/emails
+php artisan lettr:push --template=welcome-email
+php artisan lettr:push --dry-run
+```
+
+Automatically converts Blade syntax to Lettr merge tag syntax and resolves slug conflicts.
+
+| Option | Description |
+|--------|-------------|
+| `--path=` | Custom path to templates directory |
+| `--template=` | Push only a specific template by filename |
+| `--dry-run` | Preview what would be created |
+
+### `lettr:generate-enum`
+
+Generate a PHP enum from your Lettr template slugs for type-safe template references:
+
+```bash
+php artisan lettr:generate-enum
+php artisan lettr:generate-enum --dry-run
+```
+
+Generates an enum like:
+
+```php
+enum LettrTemplate: string
+{
+    case WelcomeEmail = 'welcome-email';
+    case OrderConfirmation = 'order-confirmation';
+}
+```
+
+### `lettr:generate-dtos`
+
+Generate type-safe DTO classes from template merge tags:
+
+```bash
+php artisan lettr:generate-dtos
+php artisan lettr:generate-dtos --template=welcome-email
+php artisan lettr:generate-dtos --dry-run
+```
+
+Generated DTOs implement `Arrayable` and can be passed directly to `sendTemplate()`:
+
+```php
+$data = new WelcomeEmailData(userName: 'John', activationUrl: '...');
+
+Mail::lettr()->to('user@example.com')->sendTemplate('welcome-email', $data);
+```
+
 ## Manual Setup
 
 If you prefer to configure manually, add your [Lettr API key](https://app.lettr.com) to your `.env` file:
@@ -294,6 +381,14 @@ Mail::lettr()
     ->cc('manager@example.com')
     ->bcc('records@example.com')
     ->sendTemplate('invoice', $invoiceData);
+
+// With a generated DTO (implements Arrayable)
+Mail::lettr()
+    ->to('user@example.com')
+    ->sendTemplate('welcome-email', new WelcomeEmailData(
+        userName: 'John',
+        activationUrl: 'https://example.com/activate/abc123',
+    ));
 ```
 
 ### Testing with Mail::fake()
@@ -449,7 +544,7 @@ $email = Lettr::emails()->create()
     // Tracking
     ->withClickTracking(true)
     ->withOpenTracking(true)
-    // Mark as transactional (bypasses unsubscribe lists)
+    // Mark as non-transactional (marketing email, respects unsubscribe lists)
     ->transactional(false)
     // CSS inlining
     ->withInlineCss(true)
@@ -598,7 +693,7 @@ foreach ($webhooks as $webhook) {
     echo $webhook->name;
     echo $webhook->url;
     echo $webhook->enabled;
-    echo $webhook->authType->value;  // 'none', 'basic', 'bearer'
+    echo $webhook->authType->value;  // 'none', 'basic', 'oauth2'
 
     foreach ($webhook->eventTypes as $eventType) {
         echo $eventType->value;
@@ -652,9 +747,17 @@ use Lettr\Exceptions\TransporterException;
 use Lettr\Exceptions\ValidationException;
 use Lettr\Exceptions\NotFoundException;
 use Lettr\Exceptions\UnauthorizedException;
+use Lettr\Exceptions\RateLimitException;
+use Lettr\Exceptions\QuotaExceededException;
 
 try {
     $response = Lettr::emails()->send($email);
+} catch (RateLimitException $e) {
+    // Too many requests (429)
+    Log::warning("Rate limited, retry after: " . $e->retryAfter . "s");
+} catch (QuotaExceededException $e) {
+    // Sending quota exceeded
+    Log::error("Quota exceeded: " . $e->getMessage());
 } catch (ValidationException $e) {
     // Invalid request data (422)
     Log::error("Validation failed: " . $e->getMessage());
@@ -680,8 +783,22 @@ The published `config/lettr.php` file contains:
 ```php
 return [
     'api_key' => env('LETTR_API_KEY'),
+
+    'templates' => [
+        'html_path' => resource_path('templates/lettr'),
+        'blade_path' => resource_path('views/emails/lettr'),
+        'mailable_path' => app_path('Mail/Lettr'),
+        'mailable_namespace' => 'App\\Mail\\Lettr',
+        'dto_path' => app_path('Dto/Lettr'),
+        'dto_namespace' => 'App\\Dto\\Lettr',
+        'enum_path' => app_path('Enums'),
+        'enum_namespace' => 'App\\Enums',
+        'enum_class' => 'LettrTemplate',
+    ],
 ];
 ```
+
+The `templates` block configures where `lettr:pull`, `lettr:generate-dtos`, and `lettr:generate-enum` commands save generated files.
 
 The package also supports `config('services.lettr.key')` as a fallback for the API key.
 
