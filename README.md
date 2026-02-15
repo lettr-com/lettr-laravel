@@ -56,93 +56,6 @@ Mail::to('user@example.com')->send(new WelcomeEmail($data));
 Mail::lettr()->to('user@example.com')->sendTemplate('welcome-email', $data);
 ```
 
-## CLI Commands
-
-### `lettr:check`
-
-Verify that your Lettr integration is correctly configured:
-
-```bash
-php artisan lettr:check
-```
-
-Checks mailer registration, API key validity, and sending domain verification. Returns exit code 0 if all checks pass.
-
-### `lettr:pull`
-
-Download email templates from your Lettr account as Blade files:
-
-```bash
-php artisan lettr:pull
-php artisan lettr:pull --template=welcome-email
-php artisan lettr:pull --as-html
-php artisan lettr:pull --with-mailables
-php artisan lettr:pull --dry-run
-```
-
-| Option | Description |
-|--------|-------------|
-| `--template=` | Pull only a specific template by slug |
-| `--as-html` | Save as raw HTML instead of Blade |
-| `--with-mailables` | Also generate Mailable and DTO classes |
-| `--skip-templates` | Skip downloading templates, only generate DTOs and Mailables |
-| `--dry-run` | Preview what would be downloaded |
-
-### `lettr:push`
-
-Push local Blade templates to your Lettr account:
-
-```bash
-php artisan lettr:push --path=resources/views/emails
-php artisan lettr:push --template=welcome-email
-php artisan lettr:push --dry-run
-```
-
-Automatically converts Blade syntax to Lettr merge tag syntax and resolves slug conflicts.
-
-| Option | Description |
-|--------|-------------|
-| `--path=` | Custom path to templates directory |
-| `--template=` | Push only a specific template by filename |
-| `--dry-run` | Preview what would be created |
-
-### `lettr:generate-enum`
-
-Generate a PHP enum from your Lettr template slugs for type-safe template references:
-
-```bash
-php artisan lettr:generate-enum
-php artisan lettr:generate-enum --dry-run
-```
-
-Generates an enum like:
-
-```php
-enum LettrTemplate: string
-{
-    case WelcomeEmail = 'welcome-email';
-    case OrderConfirmation = 'order-confirmation';
-}
-```
-
-### `lettr:generate-dtos`
-
-Generate type-safe DTO classes from template merge tags:
-
-```bash
-php artisan lettr:generate-dtos
-php artisan lettr:generate-dtos --template=welcome-email
-php artisan lettr:generate-dtos --dry-run
-```
-
-Generated DTOs implement `Arrayable` and can be passed directly to `sendTemplate()`:
-
-```php
-$data = new WelcomeEmailData(userName: 'John', activationUrl: '...');
-
-Mail::lettr()->to('user@example.com')->sendTemplate('welcome-email', $data);
-```
-
 ## Manual Setup
 
 If you prefer to configure manually, add your [Lettr API key](https://app.lettr.com) to your `.env` file:
@@ -801,6 +714,93 @@ return [
 The `templates` block configures where `lettr:pull`, `lettr:generate-dtos`, and `lettr:generate-enum` commands save generated files.
 
 The package also supports `config('services.lettr.key')` as a fallback for the API key.
+
+## CLI Commands
+
+### `lettr:check`
+
+Verify that your Lettr integration is correctly configured:
+
+```bash
+php artisan lettr:check
+```
+
+Checks mailer registration, API key validity, and sending domain verification. Returns exit code 0 if all checks pass.
+
+### `lettr:pull`
+
+Download email templates from your Lettr account as Blade files:
+
+```bash
+php artisan lettr:pull
+php artisan lettr:pull --template=welcome-email
+php artisan lettr:pull --as-html
+php artisan lettr:pull --with-mailables
+php artisan lettr:pull --dry-run
+```
+
+| Option | Description |
+|--------|-------------|
+| `--template=` | Pull only a specific template by slug |
+| `--as-html` | Save as raw HTML instead of Blade |
+| `--with-mailables` | Also generate Mailable and DTO classes |
+| `--skip-templates` | Skip downloading templates, only generate DTOs and Mailables |
+| `--dry-run` | Preview what would be downloaded |
+
+### `lettr:push`
+
+Push local Blade templates to your Lettr account:
+
+```bash
+php artisan lettr:push --path=resources/views/emails
+php artisan lettr:push --template=welcome-email
+php artisan lettr:push --dry-run
+```
+
+Automatically converts Blade syntax to Lettr merge tag syntax and resolves slug conflicts.
+
+| Option | Description |
+|--------|-------------|
+| `--path=` | Custom path to templates directory |
+| `--template=` | Push only a specific template by filename |
+| `--dry-run` | Preview what would be created |
+
+### `lettr:generate-enum`
+
+Generate a PHP enum from your Lettr template slugs for type-safe template references:
+
+```bash
+php artisan lettr:generate-enum
+php artisan lettr:generate-enum --dry-run
+```
+
+Generates an enum like:
+
+```php
+enum LettrTemplate: string
+{
+    case WelcomeEmail = 'welcome-email';
+    case OrderConfirmation = 'order-confirmation';
+}
+```
+
+### `lettr:generate-dtos`
+
+Generate type-safe DTO classes from template merge tags:
+
+```bash
+php artisan lettr:generate-dtos
+php artisan lettr:generate-dtos --template=welcome-email
+php artisan lettr:generate-dtos --dry-run
+```
+
+Generated DTOs implement `Arrayable` and can be passed directly to `sendTemplate()`:
+
+```php
+$data = new WelcomeEmailData(userName: 'John', activationUrl: '...');
+
+Mail::lettr()->to('user@example.com')->sendTemplate('welcome-email', $data);
+```
 
 ## Development
 
