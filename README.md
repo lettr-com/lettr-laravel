@@ -203,7 +203,7 @@ class WelcomeEmail extends LettrMailable
     public function build(): static
     {
         return $this
-            ->template('welcome-email', version: 2, projectId: 123)
+            ->template('welcome-email', version: 2)
             ->substitutionData([
                 'user_name' => $this->userName,
                 'activation_url' => $this->activationUrl,
@@ -229,9 +229,8 @@ Mail::to('user@example.com')
 
 | Method | Description |
 |--------|-------------|
-| `template($slug, $version, $projectId)` | Set template slug with optional version and project |
+| `template($slug, $version)` | Set template slug with optional version |
 | `templateVersion($version)` | Set template version separately |
-| `projectId($projectId)` | Set project ID separately |
 | `substitutionData($data)` | Set substitution variables for the template |
 
 ### Example: Order Confirmation
@@ -254,7 +253,6 @@ class OrderConfirmation extends LettrMailable
     {
         return $this
             ->template('order-confirmation')
-            ->projectId(config('services.lettr.project_id'))
             ->substitutionData([
                 'order_id' => $this->order->id,
                 'customer_name' => $this->order->customer->name,
@@ -282,13 +280,13 @@ Mail::lettr()
     ->to('user@example.com')
     ->sendTemplate('welcome-email', ['name' => 'John']);
 
-// With version and project ID
+// With specific template version
 Mail::lettr()
     ->to('user@example.com')
     ->sendTemplate('order-confirmation', [
         'order_id' => 123,
         'items' => $items,
-    ], version: 2, projectId: 456);
+    ], version: 2);
 
 // With CC and BCC
 Mail::lettr()
@@ -393,7 +391,6 @@ $response = Lettr::emails()->sendTemplate(
     subject: 'Welcome!',
     templateSlug: 'welcome-email',
     templateVersion: 2,
-    projectId: 123,
     substitutionData: ['name' => 'John'],
 );
 ```
@@ -428,7 +425,7 @@ $response = Lettr::emails()->send(
         ->from('sender@example.com')
         ->to(['recipient@example.com'])
         ->subject('Your Order #{{order_id}}')
-        ->useTemplate('order-confirmation', version: 1, projectId: 123)
+        ->useTemplate('order-confirmation', version: 1)
         ->substitutionData([
             'order_id' => '12345',
             'customer_name' => 'John Doe',
