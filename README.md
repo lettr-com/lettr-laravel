@@ -747,24 +747,6 @@ php artisan lettr:pull --dry-run
 | `--skip-templates` | Skip downloading templates, only generate DTOs and Mailables |
 | `--dry-run` | Preview what would be downloaded |
 
-### `lettr:push`
-
-Push local Blade templates to your Lettr account:
-
-```bash
-php artisan lettr:push --path=resources/views/emails
-php artisan lettr:push --template=welcome-email
-php artisan lettr:push --dry-run
-```
-
-Automatically converts Blade syntax to Lettr merge tag syntax and resolves slug conflicts.
-
-| Option | Description |
-|--------|-------------|
-| `--path=` | Custom path to templates directory |
-| `--template=` | Push only a specific template by filename |
-| `--dry-run` | Preview what would be created |
-
 ### `lettr:generate-enum`
 
 Generate a PHP enum from your Lettr template slugs for type-safe template references:
