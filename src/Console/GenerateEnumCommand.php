@@ -21,7 +21,6 @@ class GenerateEnumCommand extends Command
      * @var string
      */
     protected $signature = 'lettr:generate-enum
-                            {--project= : Generate enum for templates from a specific project ID}
                             {--dry-run : Preview what would be generated without writing files}';
 
     /**
@@ -45,11 +44,10 @@ class GenerateEnumCommand extends Command
     {
         $this->components->info('Generating enum from Lettr template slugs...');
 
-        $projectId = $this->getProjectId();
         $dryRun = (bool) $this->option('dry-run');
 
         // Fetch templates
-        $templates = $this->fetchTemplates($projectId);
+        $templates = $this->fetchTemplates();
 
         if (empty($templates)) {
             $this->components->warn('No templates found.');
@@ -64,33 +62,13 @@ class GenerateEnumCommand extends Command
     }
 
     /**
-     * Get the project ID to use for fetching templates.
-     */
-    protected function getProjectId(): ?int
-    {
-        $projectOption = $this->option('project');
-
-        if ($projectOption !== null) {
-            return (int) $projectOption;
-        }
-
-        $configProjectId = config('lettr.default_project_id');
-
-        return is_numeric($configProjectId) ? (int) $configProjectId : null;
-    }
-
-    /**
      * Fetch templates from the API.
      *
      * @return array<int, Template>
      */
-    protected function fetchTemplates(?int $projectId): array
+    protected function fetchTemplates(): array
     {
-        $filter = $projectId !== null
-            ? new ListTemplatesFilter(projectId: $projectId, perPage: 100)
-            : new ListTemplatesFilter(perPage: 100);
-
-        $response = $this->lettr->templates()->list($filter);
+        $response = $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100));
 
         return $response->templates->all();
     }

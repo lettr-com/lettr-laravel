@@ -20,7 +20,6 @@ class GenerateDtosCommand extends Command
      * @var string
      */
     protected $signature = 'lettr:generate-dtos
-                            {--project= : Generate DTOs for templates from a specific project ID}
                             {--template= : Generate DTO for a specific template by slug}
                             {--dry-run : Preview what would be generated without writing files}';
 
@@ -55,13 +54,12 @@ class GenerateDtosCommand extends Command
     {
         $this->components->info('Generating DTOs from Lettr template merge tags...');
 
-        $projectId = $this->getProjectId();
         /** @var string|null $templateSlug */
         $templateSlug = $this->option('template');
         $dryRun = (bool) $this->option('dry-run');
 
         // Fetch templates
-        $templates = $this->fetchTemplates($projectId, $templateSlug);
+        $templates = $this->fetchTemplates($templateSlug);
 
         if (empty($templates)) {
             $this->components->warn('No templates found.');
@@ -70,7 +68,7 @@ class GenerateDtosCommand extends Command
         }
 
         // Process templates with progress bar
-        $this->processTemplates($templates, $projectId, $dryRun);
+        $this->processTemplates($templates, $dryRun);
 
         // Output summary
         $this->outputSummary($dryRun);
@@ -79,33 +77,13 @@ class GenerateDtosCommand extends Command
     }
 
     /**
-     * Get the project ID to use for fetching templates.
-     */
-    protected function getProjectId(): ?int
-    {
-        $projectOption = $this->option('project');
-
-        if ($projectOption !== null) {
-            return (int) $projectOption;
-        }
-
-        $configProjectId = config('lettr.default_project_id');
-
-        return is_numeric($configProjectId) ? (int) $configProjectId : null;
-    }
-
-    /**
      * Fetch templates from the API.
      *
      * @return array<int, Template>
      */
-    protected function fetchTemplates(?int $projectId, ?string $templateSlug): array
+    protected function fetchTemplates(?string $templateSlug): array
     {
-        $filter = $projectId !== null
-            ? new ListTemplatesFilter(projectId: $projectId, perPage: 100)
-            : new ListTemplatesFilter(perPage: 100);
-
-        $response = $this->lettr->templates()->list($filter);
+        $response = $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100));
         $templates = $response->templates->all();
 
         // Filter by slug if specified
@@ -128,7 +106,7 @@ class GenerateDtosCommand extends Command
      *
      * @param  array<int, Template>  $templates
      */
-    protected function processTemplates(array $templates, ?int $projectId, bool $dryRun): void
+    protected function processTemplates(array $templates, bool $dryRun): void
     {
         $progress = progress(
             label: 'Generating DTOs',
@@ -138,7 +116,7 @@ class GenerateDtosCommand extends Command
         $progress->start();
 
         foreach ($templates as $template) {
-            $this->processTemplate($template, $projectId, $dryRun);
+            $this->processTemplate($template, $dryRun);
             $progress->advance();
         }
 
@@ -148,10 +126,10 @@ class GenerateDtosCommand extends Command
     /**
      * Process a single template.
      */
-    protected function processTemplate(Template $template, ?int $projectId, bool $dryRun): void
+    protected function processTemplate(Template $template, bool $dryRun): void
     {
         // Fetch template details to get the active version
-        $detail = $this->lettr->templates()->get($template->slug, $projectId);
+        $detail = $this->lettr->templates()->get($template->slug);
 
         // Skip templates without an active version
         if ($detail->activeVersion === null) {
@@ -161,7 +139,7 @@ class GenerateDtosCommand extends Command
         }
 
         // Fetch merge tags for the template using the active version
-        $response = $this->lettr->templates()->getMergeTags($template->slug, $projectId, $detail->activeVersion);
+        $response = $this->lettr->templates()->getMergeTags($template->slug, null, $detail->activeVersion);
 
         // Skip templates without merge tags
         if (empty($response->mergeTags)) {

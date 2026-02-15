@@ -27,7 +27,6 @@ class PullCommand extends Command
     protected $signature = 'lettr:pull
                             {--with-mailables : Also generate Mailable classes for each template}
                             {--dry-run : Preview what would be downloaded without writing files}
-                            {--project= : Pull templates from a specific project ID}
                             {--template= : Pull only a specific template by slug}
                             {--as-html : Save as raw HTML instead of converting to Blade}
                             {--skip-templates : Skip downloading templates, only generate DTOs and Mailables}';
@@ -75,7 +74,6 @@ class PullCommand extends Command
     {
         $this->components->info('Pulling templates from Lettr...');
 
-        $projectId = $this->getProjectId();
         /** @var string|null $templateSlug */
         $templateSlug = $this->option('template');
         $dryRun = (bool) $this->option('dry-run');
@@ -84,7 +82,7 @@ class PullCommand extends Command
         $skipTemplates = (bool) $this->option('skip-templates');
 
         // Fetch templates
-        $templates = $this->fetchTemplates($projectId, $templateSlug);
+        $templates = $this->fetchTemplates($templateSlug);
 
         if (empty($templates)) {
             $this->components->warn('No templates found.');
@@ -93,7 +91,7 @@ class PullCommand extends Command
         }
 
         // Process templates with progress bar
-        $this->processTemplates($templates, $projectId, $dryRun, $withMailables, $asHtml, $skipTemplates);
+        $this->processTemplates($templates, $dryRun, $withMailables, $asHtml, $skipTemplates);
 
         // Output summary
         $this->outputSummary($dryRun, $withMailables, $skipTemplates);
@@ -102,33 +100,13 @@ class PullCommand extends Command
     }
 
     /**
-     * Get the project ID to use for fetching templates.
-     */
-    protected function getProjectId(): ?int
-    {
-        $projectOption = $this->option('project');
-
-        if ($projectOption !== null) {
-            return (int) $projectOption;
-        }
-
-        $configProjectId = config('lettr.default_project_id');
-
-        return is_numeric($configProjectId) ? (int) $configProjectId : null;
-    }
-
-    /**
      * Fetch templates from the API.
      *
      * @return array<int, Template>
      */
-    protected function fetchTemplates(?int $projectId, ?string $templateSlug): array
+    protected function fetchTemplates(?string $templateSlug): array
     {
-        $filter = $projectId !== null
-            ? new ListTemplatesFilter(projectId: $projectId, perPage: 100)
-            : new ListTemplatesFilter(perPage: 100);
-
-        $response = $this->lettr->templates()->list($filter);
+        $response = $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100));
         $templates = $response->templates->all();
 
         // Filter by slug if specified
@@ -151,7 +129,7 @@ class PullCommand extends Command
      *
      * @param  array<int, Template>  $templates
      */
-    protected function processTemplates(array $templates, ?int $projectId, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates): void
+    protected function processTemplates(array $templates, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates): void
     {
         $label = $skipTemplates ? 'Processing templates' : 'Downloading templates';
         $progress = progress(
@@ -162,7 +140,7 @@ class PullCommand extends Command
         $progress->start();
 
         foreach ($templates as $template) {
-            $this->processTemplate($template, $projectId, $dryRun, $withMailables, $asHtml, $skipTemplates);
+            $this->processTemplate($template, $dryRun, $withMailables, $asHtml, $skipTemplates);
             $progress->advance();
         }
 
@@ -172,10 +150,10 @@ class PullCommand extends Command
     /**
      * Process a single template.
      */
-    protected function processTemplate(Template $template, ?int $projectId, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates): void
+    protected function processTemplate(Template $template, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates): void
     {
         // Fetch full template details to get the HTML
-        $detail = $this->lettr->templates()->get($template->slug, $projectId);
+        $detail = $this->lettr->templates()->get($template->slug);
 
         // Skip templates without HTML (only relevant when downloading)
         if (! $skipTemplates && empty($detail->html)) {
@@ -201,7 +179,7 @@ class PullCommand extends Command
         // Generate Mailable and DTO if requested
         if ($withMailables) {
             // Fetch merge tags for the DTO
-            $mergeTags = $this->fetchMergeTags($detail, $projectId);
+            $mergeTags = $this->fetchMergeTags($detail);
 
             // Generate DTO if there are merge tags
             if (! empty($mergeTags)) {
@@ -224,13 +202,13 @@ class PullCommand extends Command
      *
      * @return array<int, MergeTag>
      */
-    protected function fetchMergeTags(TemplateDetail $detail, ?int $projectId): array
+    protected function fetchMergeTags(TemplateDetail $detail): array
     {
         if ($detail->activeVersion === null) {
             return [];
         }
 
-        $response = $this->lettr->templates()->getMergeTags($detail->slug, $projectId, $detail->activeVersion);
+        $response = $this->lettr->templates()->getMergeTags($detail->slug, null, $detail->activeVersion);
 
         return $response->mergeTags;
     }

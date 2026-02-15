@@ -16,19 +16,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Project ID
-    |--------------------------------------------------------------------------
-    |
-    | The default project ID to use when listing or fetching templates.
-    | This can be overridden by passing an explicit project ID to the
-    | template service methods.
-    |
-    */
-
-    'default_project_id' => env('LETTR_DEFAULT_PROJECT_ID'),
-
-    /*
-    |--------------------------------------------------------------------------
     | Template Paths
     |--------------------------------------------------------------------------
     |

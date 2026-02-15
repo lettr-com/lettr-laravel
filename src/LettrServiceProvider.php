@@ -92,13 +92,10 @@ class LettrServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton('lettr', function (): LettrManager {
-            $defaultProjectId = config('lettr.default_project_id');
-
             // Pass a resolver closure instead of the resolved client
             // This defers API key validation until the client is actually used
             return new LettrManager(
                 fn (): Lettr => $this->app->make(Lettr::class),
-                is_numeric($defaultProjectId) ? (int) $defaultProjectId : null,
             );
         });
 

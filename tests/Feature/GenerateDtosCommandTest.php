@@ -96,7 +96,7 @@ it('generates dto from simple merge tags', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('welcome-email', null)
+        ->with('welcome-email')
         ->once()
         ->andReturn($templateDetail);
 
@@ -150,7 +150,7 @@ it('generates nested dto for merge tags with children', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('order-confirmation', null)
+        ->with('order-confirmation')
         ->once()
         ->andReturn($templateDetail);
 
@@ -215,13 +215,13 @@ it('skips templates without merge tags', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('empty-template', null)
+        ->with('empty-template')
         ->once()
         ->andReturn($emptyDetail);
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('valid-template', null)
+        ->with('valid-template')
         ->once()
         ->andReturn($validDetail);
 
@@ -275,13 +275,13 @@ it('skips templates without active version', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('no-version-template', null)
+        ->with('no-version-template')
         ->once()
         ->andReturn($noVersionDetail);
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('valid-template', null)
+        ->with('valid-template')
         ->once()
         ->andReturn($validDetail);
 
@@ -321,7 +321,7 @@ it('does not write files in dry run mode', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('dry-run-template', null)
+        ->with('dry-run-template')
         ->once()
         ->andReturn($templateDetail);
 
@@ -343,74 +343,6 @@ it('does not write files in dry run mode', function () {
         ->expectsOutputToContain('Would generate');
 });
 
-it('uses project id from option', function () {
-    $templates = [createDtoTemplate(1, 'Project Template', 'project-template', 42)];
-    $templateDetail = createDtoTemplateDetail(1, 'Project Template', 'project-template', 1, 42);
-    $mergeTags = [
-        new MergeTag(key: 'data', required: true, type: 'string'),
-    ];
-
-    $this->templateService
-        ->shouldReceive('list')
-        ->once()
-        ->withArgs(fn ($filter) => $filter->projectId === 42)
-        ->andReturn(createDtoListResponse($templates));
-
-    $this->templateService
-        ->shouldReceive('get')
-        ->with('project-template', 42)
-        ->once()
-        ->andReturn($templateDetail);
-
-    $this->templateService
-        ->shouldReceive('getMergeTags')
-        ->with('project-template', 42, 1)
-        ->once()
-        ->andReturn(createMergeTagsResponse('project-template', $mergeTags, 42));
-
-    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
-    $this->filesystem->shouldReceive('get')->andReturn(file_get_contents(__DIR__.'/../../stubs/template-dto.stub'));
-    $this->filesystem->shouldReceive('put')->once();
-
-    $this->artisan(GenerateDtosCommand::class, ['--project' => 42])
-        ->assertSuccessful();
-});
-
-it('uses project id from config when not provided as option', function () {
-    config()->set('lettr.default_project_id', 99);
-
-    $templates = [createDtoTemplate(1, 'Config Template', 'config-template', 99)];
-    $templateDetail = createDtoTemplateDetail(1, 'Config Template', 'config-template', 1, 99);
-    $mergeTags = [
-        new MergeTag(key: 'value', required: true, type: 'string'),
-    ];
-
-    $this->templateService
-        ->shouldReceive('list')
-        ->once()
-        ->withArgs(fn ($filter) => $filter->projectId === 99)
-        ->andReturn(createDtoListResponse($templates));
-
-    $this->templateService
-        ->shouldReceive('get')
-        ->with('config-template', 99)
-        ->once()
-        ->andReturn($templateDetail);
-
-    $this->templateService
-        ->shouldReceive('getMergeTags')
-        ->with('config-template', 99, 1)
-        ->once()
-        ->andReturn(createMergeTagsResponse('config-template', $mergeTags, 99));
-
-    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
-    $this->filesystem->shouldReceive('get')->andReturn(file_get_contents(__DIR__.'/../../stubs/template-dto.stub'));
-    $this->filesystem->shouldReceive('put')->once();
-
-    $this->artisan(GenerateDtosCommand::class)
-        ->assertSuccessful();
-});
-
 it('filters templates by slug when template option is provided', function () {
     $templates = [
         createDtoTemplate(1, 'First Template', 'first-template'),
@@ -430,7 +362,7 @@ it('filters templates by slug when template option is provided', function () {
     // Only the second template should have details fetched
     $this->templateService
         ->shouldReceive('get')
-        ->with('second-template', null)
+        ->with('second-template')
         ->once()
         ->andReturn($templateDetail);
 
@@ -476,7 +408,7 @@ it('creates directories when they do not exist', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('new-dir-template', null)
+        ->with('new-dir-template')
         ->once()
         ->andReturn($templateDetail);
 
@@ -518,7 +450,7 @@ it('maps all php types correctly', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('type-test', null)
+        ->with('type-test')
         ->once()
         ->andReturn($templateDetail);
 
@@ -564,7 +496,7 @@ it('places required properties before optional ones', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('order-test', null)
+        ->with('order-test')
         ->once()
         ->andReturn($templateDetail);
 
@@ -612,7 +544,7 @@ it('generates dtos that implement Arrayable interface', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('arrayable-test', null)
+        ->with('arrayable-test')
         ->once()
         ->andReturn($templateDetail);
 
@@ -663,7 +595,7 @@ it('generates nested dtos that also implement Arrayable interface', function () 
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('nested-arrayable', null)
+        ->with('nested-arrayable')
         ->once()
         ->andReturn($templateDetail);
 
@@ -721,7 +653,7 @@ it('includes proper imports for nested dto classes', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('import-test', null)
+        ->with('import-test')
         ->once()
         ->andReturn($templateDetail);
 

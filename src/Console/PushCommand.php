@@ -24,7 +24,6 @@ class PushCommand extends Command
      * @var string
      */
     protected $signature = 'lettr:push
-                            {--project= : Push templates to a specific project ID}
                             {--path= : Custom path to templates directory}
                             {--template= : Push only a specific template by filename}
                             {--dry-run : Preview what would be created without pushing}';
@@ -61,7 +60,6 @@ class PushCommand extends Command
     {
         $this->components->info('Pushing templates to Lettr...');
 
-        $projectId = $this->getProjectId();
         $dryRun = (bool) $this->option('dry-run');
 
         // Discover or get path
@@ -89,28 +87,12 @@ class PushCommand extends Command
         }
 
         // Process templates
-        $this->processTemplates($bladeFiles, $projectId, $dryRun);
+        $this->processTemplates($bladeFiles, $dryRun);
 
         // Output summary
         $this->outputSummary($dryRun);
 
         return self::SUCCESS;
-    }
-
-    /**
-     * Get the project ID to use for creating templates.
-     */
-    protected function getProjectId(): ?int
-    {
-        $projectOption = $this->option('project');
-
-        if ($projectOption !== null) {
-            return (int) $projectOption;
-        }
-
-        $configProjectId = config('lettr.default_project_id');
-
-        return is_numeric($configProjectId) ? (int) $configProjectId : null;
     }
 
     /**
@@ -188,7 +170,7 @@ class PushCommand extends Command
      *
      * @param  array<int, string>  $files
      */
-    protected function processTemplates(array $files, ?int $projectId, bool $dryRun): void
+    protected function processTemplates(array $files, bool $dryRun): void
     {
         $progress = progress(
             label: 'Processing templates',
@@ -198,7 +180,7 @@ class PushCommand extends Command
         $progress->start();
 
         foreach ($files as $file) {
-            $this->processTemplate($file, $projectId, $dryRun);
+            $this->processTemplate($file, $dryRun);
             $progress->advance();
         }
 
@@ -208,7 +190,7 @@ class PushCommand extends Command
     /**
      * Process a single template file.
      */
-    protected function processTemplate(string $filePath, ?int $projectId, bool $dryRun): void
+    protected function processTemplate(string $filePath, bool $dryRun): void
     {
         $filename = $this->getFilenameWithoutExtension($filePath);
         $name = $this->filenameToName($filename);
@@ -230,10 +212,10 @@ class PushCommand extends Command
         }
 
         // Resolve slug conflicts
-        $slug = $dryRun ? $baseSlug : $this->resolveSlug($baseSlug, $projectId);
+        $slug = $dryRun ? $baseSlug : $this->resolveSlug($baseSlug);
 
         if (! $dryRun) {
-            $this->createTemplate($name, $slug, $html, $projectId);
+            $this->createTemplate($name, $slug, $html);
         }
 
         $this->createdTemplates[] = [
@@ -247,12 +229,12 @@ class PushCommand extends Command
     /**
      * Resolve slug conflicts by appending incrementing numbers.
      */
-    protected function resolveSlug(string $baseSlug, ?int $projectId): string
+    protected function resolveSlug(string $baseSlug): string
     {
         $slug = $baseSlug;
         $counter = 1;
 
-        while ($this->lettr->templates()->slugExists($slug, $projectId)) {
+        while ($this->lettr->templates()->slugExists($slug)) {
             $slug = "{$baseSlug}-{$counter}";
             $counter++;
         }
@@ -263,12 +245,11 @@ class PushCommand extends Command
     /**
      * Create a template via the API.
      */
-    protected function createTemplate(string $name, string $slug, string $html, ?int $projectId): CreatedTemplate
+    protected function createTemplate(string $name, string $slug, string $html): CreatedTemplate
     {
         $data = new CreateTemplateData(
             name: $name,
             slug: $slug,
-            projectId: $projectId,
             html: $html,
         );
 

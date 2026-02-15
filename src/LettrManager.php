@@ -33,7 +33,6 @@ class LettrManager
      */
     public function __construct(
         private readonly Closure $lettrResolver,
-        private readonly ?int $defaultProjectId = null,
     ) {}
 
     /**
@@ -89,14 +88,13 @@ class LettrManager
     }
 
     /**
-     * Get the template service wrapper with default project ID support.
+     * Get the template service wrapper.
      */
     public function templates(): TemplateServiceWrapper
     {
         if ($this->templateServiceWrapper === null) {
             $this->templateServiceWrapper = new TemplateServiceWrapper(
                 $this->lettr()->templates(),
-                $this->defaultProjectId,
             );
         }
 

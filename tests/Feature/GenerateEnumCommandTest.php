@@ -140,46 +140,6 @@ it('does not write files in dry run mode', function () {
         ->expectsOutputToContain('Would generate');
 });
 
-it('uses project id from option', function () {
-    $templates = [
-        createEnumTemplate(1, 'Project Template', 'project-template', 42),
-    ];
-
-    $this->templateService
-        ->shouldReceive('list')
-        ->once()
-        ->withArgs(fn ($filter) => $filter->projectId === 42)
-        ->andReturn(createEnumListResponse($templates));
-
-    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
-    $this->filesystem->shouldReceive('get')->andReturn(file_get_contents(__DIR__.'/../../stubs/template-enum.stub'));
-    $this->filesystem->shouldReceive('put')->once();
-
-    $this->artisan(GenerateEnumCommand::class, ['--project' => 42])
-        ->assertSuccessful();
-});
-
-it('uses project id from config when not provided as option', function () {
-    config()->set('lettr.default_project_id', 99);
-
-    $templates = [
-        createEnumTemplate(1, 'Config Template', 'config-template', 99),
-    ];
-
-    $this->templateService
-        ->shouldReceive('list')
-        ->once()
-        ->withArgs(fn ($filter) => $filter->projectId === 99)
-        ->andReturn(createEnumListResponse($templates));
-
-    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
-    $this->filesystem->shouldReceive('get')->andReturn(file_get_contents(__DIR__.'/../../stubs/template-enum.stub'));
-    $this->filesystem->shouldReceive('put')->once();
-
-    $this->artisan(GenerateEnumCommand::class)
-        ->assertSuccessful();
-});
-
 it('shows warning when no templates found', function () {
     $this->templateService
         ->shouldReceive('list')

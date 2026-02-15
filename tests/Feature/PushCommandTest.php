@@ -32,7 +32,6 @@ beforeEach(function () {
     $this->app->instance(LettrManager::class, $this->lettrManager);
     $this->app->instance(Filesystem::class, $this->filesystem);
 
-    config()->set('lettr.default_project_id', null);
 });
 
 it('pushes templates from specified path', function () {
@@ -56,7 +55,7 @@ it('pushes templates from specified path', function () {
 
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('welcome-email', null)
+        ->with('welcome-email')
         ->once()
         ->andReturn(false);
 
@@ -104,7 +103,7 @@ it('auto-discovers emails folder and confirms with user', function () {
 
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('order-confirmation', null)
+        ->with('order-confirmation')
         ->andReturn(false);
 
     $this->templateService
@@ -139,21 +138,21 @@ it('resolves slug conflicts by appending numbers', function () {
     // First slug exists
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('welcome-email', null)
+        ->with('welcome-email')
         ->once()
         ->andReturn(true);
 
     // Second slug also exists
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('welcome-email-1', null)
+        ->with('welcome-email-1')
         ->once()
         ->andReturn(true);
 
     // Third slug is available
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('welcome-email-2', null)
+        ->with('welcome-email-2')
         ->once()
         ->andReturn(false);
 
@@ -166,76 +165,6 @@ it('resolves slug conflicts by appending numbers', function () {
     $this->artisan(PushCommand::class, ['--path' => $path])
         ->assertSuccessful()
         ->expectsOutputToContain('welcome-email-2');
-});
-
-it('uses project id from option', function () {
-    $path = '/path/to/templates';
-    $bladeFile = $path.'/test-template.blade.php';
-
-    $this->filesystem
-        ->shouldReceive('isDirectory')
-        ->with($path)
-        ->andReturn(true);
-
-    $this->filesystem
-        ->shouldReceive('glob')
-        ->with($path.'/*.blade.php')
-        ->andReturn([$bladeFile]);
-
-    $this->filesystem
-        ->shouldReceive('get')
-        ->with($bladeFile)
-        ->andReturn('<html>Content</html>');
-
-    $this->templateService
-        ->shouldReceive('slugExists')
-        ->with('test-template', 42)
-        ->andReturn(false);
-
-    $this->templateService
-        ->shouldReceive('create')
-        ->once()
-        ->withArgs(fn (CreateTemplateData $data) => $data->projectId === 42)
-        ->andReturn(createCreatedTemplateForPush(1, 'Test Template', 'test-template', 42));
-
-    $this->artisan(PushCommand::class, ['--path' => $path, '--project' => 42])
-        ->assertSuccessful();
-});
-
-it('uses project id from config when not provided as option', function () {
-    config()->set('lettr.default_project_id', 99);
-
-    $path = '/path/to/templates';
-    $bladeFile = $path.'/config-template.blade.php';
-
-    $this->filesystem
-        ->shouldReceive('isDirectory')
-        ->with($path)
-        ->andReturn(true);
-
-    $this->filesystem
-        ->shouldReceive('glob')
-        ->with($path.'/*.blade.php')
-        ->andReturn([$bladeFile]);
-
-    $this->filesystem
-        ->shouldReceive('get')
-        ->with($bladeFile)
-        ->andReturn('<html>Content</html>');
-
-    $this->templateService
-        ->shouldReceive('slugExists')
-        ->with('config-template', 99)
-        ->andReturn(false);
-
-    $this->templateService
-        ->shouldReceive('create')
-        ->once()
-        ->withArgs(fn (CreateTemplateData $data) => $data->projectId === 99)
-        ->andReturn(createCreatedTemplateForPush(1, 'Config Template', 'config-template', 99));
-
-    $this->artisan(PushCommand::class, ['--path' => $path])
-        ->assertSuccessful();
 });
 
 it('filters templates by filename when template option is provided', function () {
@@ -264,7 +193,7 @@ it('filters templates by filename when template option is provided', function ()
 
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('second-template', null)
+        ->with('second-template')
         ->andReturn(false);
 
     $this->templateService
@@ -353,7 +282,7 @@ it('skips templates with empty content', function () {
 
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('valid-template', null)
+        ->with('valid-template')
         ->andReturn(false);
 
     // Only valid template should be created
@@ -403,7 +332,7 @@ it('converts filenames to proper names and slugs', function () {
 
     $this->templateService
         ->shouldReceive('slugExists')
-        ->with('my-welcome-email', null)
+        ->with('my-welcome-email')
         ->andReturn(false);
 
     $this->templateService

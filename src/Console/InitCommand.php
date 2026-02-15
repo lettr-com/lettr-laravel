@@ -55,11 +55,6 @@ class InitCommand extends Command
     protected ?PromiseInterface $templatesPromise = null;
 
     /**
-     * Async promise for fetching projects.
-     */
-    protected ?PromiseInterface $projectsPromise = null;
-
-    /**
      * Sample template for personalized examples.
      *
      * @var array{slug: string, name: string}|null
@@ -379,24 +374,12 @@ PHP;
     /**
      * Start fetching domains and templates asynchronously in the background.
      */
-    protected function startAsyncFetches(?int $projectId = null): void
+    protected function startAsyncFetches(): void
     {
         $apiKey = config('lettr.api_key');
 
         if (! is_string($apiKey) || $apiKey === '') {
             return;
-        }
-
-        $templateParams = ['per_page' => 1];
-        if ($projectId !== null) {
-            $templateParams['project_id'] = $projectId;
-        }
-        if ($projectId === null) {
-            /** @var PromiseInterface $projectsPromise */
-            $projectsPromise = Http::async()
-                ->withToken($apiKey)
-                ->get('https://app.lettr.com/api/projects');
-            $this->projectsPromise = $projectsPromise;
         }
 
         /** @var PromiseInterface $domainsPromise */
@@ -408,9 +391,8 @@ PHP;
         /** @var PromiseInterface $templatesPromise */
         $templatesPromise = Http::async()
             ->withToken($apiKey)
-            ->get('https://app.lettr.com/api/templates', $templateParams);
+            ->get('https://app.lettr.com/api/templates', ['per_page' => 1]);
         $this->templatesPromise = $templatesPromise;
-
     }
 
     /**
@@ -467,52 +449,6 @@ PHP;
     }
 
     /**
-     * Fetch projects silently, using async result if available.
-     *
-     * @return array<int, array{id: int, name: string, emoji: string}>|null
-     */
-    protected function fetchProjects(): ?array
-    {
-        // Try to get result from async promise first
-        if ($this->projectsPromise !== null) {
-            try {
-                /** @var \Illuminate\Http\Client\Response $response */
-                $response = $this->projectsPromise->wait();
-
-                if ($response->successful()) {
-                    /** @var array<int, array{id: int, name: string, emoji: string}> $projectsData */
-                    $projectsData = $response->json('data.projects', []);
-
-                    return empty($projectsData) ? null : $projectsData;
-                }
-            } catch (\Throwable) {
-                // Fall through to SDK approach
-            }
-        }
-
-        // Fall back to SDK (synchronous)
-        /** @var LettrManager $lettr */
-        $lettr = app('lettr');
-
-        try {
-            $response = $lettr->projects()->list();
-        } catch (\Throwable) {
-            return null;
-        }
-
-        $projects = [];
-        foreach ($response->projects->all() as $project) {
-            $projects[] = [
-                'id' => $project->id,
-                'name' => $project->name,
-                'emoji' => $project->emoji,
-            ];
-        }
-
-        return empty($projects) ? null : $projects;
-    }
-
-    /**
      * Fetch a sample template for personalized examples.
      */
     protected function fetchSampleTemplate(): void
@@ -546,13 +482,7 @@ PHP;
             /** @var LettrManager $lettr */
             $lettr = app('lettr');
 
-            $projectId = config('lettr.default_project_id');
-            $filter = new \Lettr\Dto\Template\ListTemplatesFilter(
-                projectId: is_int($projectId) ? $projectId : null,
-                perPage: 1
-            );
-
-            $response = $lettr->templates()->list($filter);
+            $response = $lettr->templates()->list(new \Lettr\Dto\Template\ListTemplatesFilter(perPage: 1));
             $templates = $response->templates->all();
 
             if (! empty($templates)) {
@@ -564,57 +494,6 @@ PHP;
         } catch (\Throwable) {
             // Silently fail - will use default examples
         }
-    }
-
-    /**
-     * Setup project selection if user has multiple projects.
-     * Writes to .env and restarts async fetches if a project is selected.
-     *
-     * @return int|null Selected project ID or null if skipped
-     */
-    protected function setupProjectIfNeeded(): ?int
-    {
-        $projects = $this->fetchProjects();
-        if ($projects === null) {
-            return null;
-        }
-
-        $selectedProjectId = $this->setupProject($projects);
-        if ($selectedProjectId !== null) {
-            $this->writeEnvVariable('LETTR_DEFAULT_PROJECT_ID', (string) $selectedProjectId);
-            config()->set('lettr.default_project_id', $selectedProjectId);
-            $this->startAsyncFetches($selectedProjectId);
-        }
-
-        return $selectedProjectId;
-    }
-
-    /**
-     * Setup the project if multiple projects are available.
-     *
-     * @param  array<int, array{id: int, name: string, emoji: string}>  $projects
-     * @return int|null Selected project ID or null if skipped
-     */
-    protected function setupProject(array $projects): ?int
-    {
-        // 0 or 1 project: skip
-        if (empty($projects) || count($projects) === 1) {
-            return null;
-        }
-
-        // 2+ projects: show selection prompt
-        $options = [];
-        foreach ($projects as $project) {
-            $options[$project['id']] = "{$project['emoji']} {$project['name']}";
-        }
-
-        $selectedId = select(
-            label: 'Select a default project',
-            options: $options,
-            hint: 'This project will be used for template operations',
-        );
-
-        return (int) $selectedId;
     }
 
     /**
@@ -707,9 +586,6 @@ PHP;
             return true;
         }
 
-        // Project selection needed - user will push to Lettr
-        $this->setupProjectIfNeeded();
-
         // Push templates to Lettr
         $this->newLine();
         $this->call('lettr:push');
@@ -727,9 +603,6 @@ PHP;
      */
     protected function handleNoLocalTemplates(): void
     {
-        // Project selection needed - user will interact with Lettr templates
-        $this->setupProjectIfNeeded();
-
         $downloadTemplates = confirm(
             label: 'Do you want to download templates from your Lettr account?',
             default: false,

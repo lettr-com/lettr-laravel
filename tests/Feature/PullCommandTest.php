@@ -85,7 +85,7 @@ it('pulls templates and saves them as blade files by default', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('welcome-email', null)
+        ->with('welcome-email')
         ->once()
         ->andReturn($templateDetail);
 
@@ -113,7 +113,7 @@ it('pulls templates and saves them as html files with --as-html flag', function 
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('welcome-email', null)
+        ->with('welcome-email')
         ->once()
         ->andReturn($templateDetail);
 
@@ -146,13 +146,13 @@ it('skips templates without html content', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('empty-template', null)
+        ->with('empty-template')
         ->once()
         ->andReturn($emptyDetail);
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('valid-template', null)
+        ->with('valid-template')
         ->once()
         ->andReturn($validDetail);
 
@@ -181,7 +181,7 @@ it('skips templates with null html content', function () {
 
     $this->templateService
         ->shouldReceive('get')
-        ->with('null-html-template', null)
+        ->with('null-html-template')
         ->once()
         ->andReturn($nullHtmlDetail);
 
@@ -191,54 +191,6 @@ it('skips templates with null html content', function () {
     $this->artisan(PullCommand::class)
         ->assertSuccessful()
         ->expectsOutputToContain('Skipped (no HTML)');
-});
-
-it('uses project id from option', function () {
-    $templates = [createTemplate(1, 'Project Template', 'project-template', 42)];
-    $templateDetail = createTemplateDetail(1, 'Project Template', 'project-template', '<html>Content</html>', 42);
-
-    $this->templateService
-        ->shouldReceive('list')
-        ->once()
-        ->withArgs(fn ($filter) => $filter->projectId === 42)
-        ->andReturn(createListResponse($templates));
-
-    $this->templateService
-        ->shouldReceive('get')
-        ->with('project-template', 42)
-        ->once()
-        ->andReturn($templateDetail);
-
-    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
-    $this->filesystem->shouldReceive('put')->once();
-
-    $this->artisan(PullCommand::class, ['--project' => 42])
-        ->assertSuccessful();
-});
-
-it('uses project id from config when not provided as option', function () {
-    config()->set('lettr.default_project_id', 99);
-
-    $templates = [createTemplate(1, 'Config Template', 'config-template', 99)];
-    $templateDetail = createTemplateDetail(1, 'Config Template', 'config-template', '<html>Content</html>', 99);
-
-    $this->templateService
-        ->shouldReceive('list')
-        ->once()
-        ->withArgs(fn ($filter) => $filter->projectId === 99)
-        ->andReturn(createListResponse($templates));
-
-    $this->templateService
-        ->shouldReceive('get')
-        ->with('config-template', 99)
-        ->once()
-        ->andReturn($templateDetail);
-
-    $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
-    $this->filesystem->shouldReceive('put')->once();
-
-    $this->artisan(PullCommand::class)
-        ->assertSuccessful();
 });
 
 it('filters templates by slug when template option is provided', function () {
@@ -257,7 +209,7 @@ it('filters templates by slug when template option is provided', function () {
     // Only the second template should be fetched
     $this->templateService
         ->shouldReceive('get')
-        ->with('second-template', null)
+        ->with('second-template')
         ->once()
         ->andReturn($templateDetail);
 
