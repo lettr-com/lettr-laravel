@@ -3,6 +3,7 @@
 use Illuminate\Filesystem\Filesystem;
 use Lettr\Dto\Template\CreatedTemplate;
 use Lettr\Dto\Template\CreateTemplateData;
+use Lettr\Enums\TemplatePurpose;
 use Lettr\Laravel\Console\PushCommand;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Services\TemplateServiceWrapper;
@@ -331,4 +332,74 @@ it('pushes multiple templates', function () {
     $this->artisan(PushCommand::class, ['--path' => $path])
         ->assertSuccessful()
         ->expectsOutputToContain('Created 3 template(s)');
+});
+
+it('creates the templates in the campaign module when purpose is given', function () {
+    $path = '/path/to/templates';
+    $bladeFile = $path.'/october-newsletter.blade.php';
+
+    $this->filesystem
+        ->shouldReceive('isDirectory')
+        ->with($path)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('glob')
+        ->with($path.'/*.blade.php')
+        ->andReturn([$bladeFile]);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($bladeFile)
+        ->andReturn('<html><body>Hi</body></html>');
+
+    $this->templateService
+        ->shouldReceive('create')
+        ->once()
+        ->withArgs(fn (CreateTemplateData $data): bool => $data->purpose === TemplatePurpose::Campaign
+            && $data->toArray()['purpose'] === 'campaign')
+        ->andReturn(createCreatedTemplateForPush(1, 'October Newsletter', 'october-newsletter'));
+
+    $this->artisan(PushCommand::class, ['--path' => $path, '--purpose' => 'campaign'])
+        ->assertSuccessful()
+        ->expectsOutputToContain('as campaign');
+});
+
+it('sends no purpose key when the option is omitted', function () {
+    $path = '/path/to/templates';
+    $bladeFile = $path.'/welcome-email.blade.php';
+
+    $this->filesystem
+        ->shouldReceive('isDirectory')
+        ->with($path)
+        ->andReturn(true);
+
+    $this->filesystem
+        ->shouldReceive('glob')
+        ->with($path.'/*.blade.php')
+        ->andReturn([$bladeFile]);
+
+    $this->filesystem
+        ->shouldReceive('get')
+        ->with($bladeFile)
+        ->andReturn('<html><body>Welcome!</body></html>');
+
+    $this->templateService
+        ->shouldReceive('create')
+        ->once()
+        ->withArgs(fn (CreateTemplateData $data): bool => $data->purpose === null
+            && ! array_key_exists('purpose', $data->toArray()))
+        ->andReturn(createCreatedTemplateForPush(1, 'Welcome Email', 'welcome-email'));
+
+    $this->artisan(PushCommand::class, ['--path' => $path])
+        ->assertSuccessful();
+});
+
+it('fails before touching the filesystem when the purpose is not a module', function () {
+    $this->filesystem->shouldNotReceive('isDirectory');
+    $this->templateService->shouldNotReceive('create');
+
+    $this->artisan(PushCommand::class, ['--path' => '/path/to/templates', '--purpose' => 'newsletter'])
+        ->assertFailed()
+        ->expectsOutputToContain("Invalid --purpose 'newsletter'");
 });

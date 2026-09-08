@@ -499,6 +499,27 @@ php artisan lettr:pull --dry-run
 | `--skip-templates` | Skip downloading templates, only generate DTOs and Mailables |
 | `--dry-run` | Preview what would be downloaded |
 
+### `lettr:push`
+
+Upload local Blade email templates to your Lettr account, the reverse of `lettr:pull`:
+
+```bash
+php artisan lettr:push
+php artisan lettr:push --path=resources/views/emails
+php artisan lettr:push --template=welcome-email
+php artisan lettr:push --purpose=campaign
+php artisan lettr:push --dry-run
+```
+
+| Option | Description |
+|--------|-------------|
+| `--path=` | Custom path to the templates directory (auto-discovered otherwise) |
+| `--template=` | Push only a specific template by filename |
+| `--purpose=` | Module to create the templates in — `transactional` (default) or `campaign` |
+| `--dry-run` | Preview what would be created without pushing |
+
+Blade syntax is converted to Sparkpost syntax on the way up. Without `--purpose` no module is sent at all and the API applies its own default, which is `transactional` — the right one for Blade mailables.
+
 ### `lettr:generate-enum`
 
 Generate a PHP enum from your Lettr template slugs for type-safe template references:

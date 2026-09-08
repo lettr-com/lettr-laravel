@@ -25,6 +25,9 @@ use Lettr\Dto\Audience\UpdateAudiencePropertyData;
 use Lettr\Dto\Audience\UpdateAudienceSegmentData;
 use Lettr\Dto\Campaign\ListCampaignEventsFilter;
 use Lettr\Dto\Campaign\ListCampaignsFilter;
+use Lettr\Dto\Folder\ListFoldersFilter;
+use Lettr\Dto\Template\CreateTemplateData;
+use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Enums\AudienceContactStatus;
 use Lettr\Enums\AudiencePropertyType;
 use Lettr\Enums\AudienceTopicDefaultSubscription;
@@ -32,7 +35,9 @@ use Lettr\Enums\AudienceTopicVisibility;
 use Lettr\Enums\CampaignStatus;
 use Lettr\Enums\EventType;
 use Lettr\Enums\SegmentOperator;
+use Lettr\Enums\TemplatePurpose;
 use Lettr\Laravel\Facades\Lettr;
+use Lettr\Services\FolderService;
 
 // ---------------------------------------------------------------------------
 // Email builder
@@ -346,4 +351,77 @@ it('CampaignStatus exposes the documented lifecycle values and labels', function
         ->and(CampaignStatus::Sent->value)->toBe('sent')
         ->and(CampaignStatus::Failed->value)->toBe('failed')
         ->and(CampaignStatus::InReview->label())->toBe('In Review');
+});
+
+// ---------------------------------------------------------------------------
+// Templates — purpose
+// ---------------------------------------------------------------------------
+
+it('TemplatePurpose exposes the two modules', function () {
+    expect(TemplatePurpose::Transactional->value)->toBe('transactional')
+        ->and(TemplatePurpose::Campaign->value)->toBe('campaign')
+        ->and(TemplatePurpose::Campaign->label())->toBe('Campaign');
+});
+
+it('CreateTemplateData emits the purpose only when set', function () {
+    $marketing = new CreateTemplateData(
+        name: 'October Newsletter',
+        html: '<html><body>Hi</body></html>',
+        purpose: TemplatePurpose::Campaign,
+    );
+
+    $transactional = new CreateTemplateData(
+        name: 'Welcome Email',
+        html: '<html><body>Hi</body></html>',
+    );
+
+    expect($marketing->toArray())->toBe([
+        'name' => 'October Newsletter',
+        'html' => '<html><body>Hi</body></html>',
+        'purpose' => 'campaign',
+    ])
+        ->and($transactional->toArray())->toBe([
+            'name' => 'Welcome Email',
+            'html' => '<html><body>Hi</body></html>',
+        ])
+        ->and($transactional->toArray())->not->toHaveKey('purpose');
+});
+
+it('ListTemplatesFilter serializes the purpose filter', function () {
+    $filter = ListTemplatesFilter::create()
+        ->projectId(5)
+        ->purpose(TemplatePurpose::Campaign);
+
+    expect($filter->toArray())->toBe([
+        'project_id' => 5,
+        'purpose' => 'campaign',
+    ]);
+});
+
+// ---------------------------------------------------------------------------
+// Folders
+// ---------------------------------------------------------------------------
+
+it('ListFoldersFilter builds fluently into query params', function () {
+    $filter = ListFoldersFilter::create()
+        ->projectId(5)
+        ->purpose(TemplatePurpose::Campaign)
+        ->perPage(50)
+        ->page(2);
+
+    expect($filter->toArray())->toBe([
+        'project_id' => 5,
+        'purpose' => 'campaign',
+        'per_page' => 50,
+        'page' => 2,
+    ]);
+});
+
+it('ListFoldersFilter sends nothing when empty', function () {
+    expect(ListFoldersFilter::create()->hasFilters())->toBeFalse()
+        ->and(ListFoldersFilter::create()->toArray())->toBe([]);
+});
+
+it('the facade exposes the folder service', function () {
+    expect(Lettr::folders())->toBeInstanceOf(FolderService::class);
 });

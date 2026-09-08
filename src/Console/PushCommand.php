@@ -9,6 +9,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Lettr\Dto\Template\CreatedTemplate;
 use Lettr\Dto\Template\CreateTemplateData;
+use Lettr\Enums\TemplatePurpose;
 use Lettr\Laravel\Concerns\ThrottlesApiRequests;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Support\BladeToSparkpostConverter;
@@ -29,6 +30,7 @@ class PushCommand extends Command
     protected $signature = 'lettr:push
                             {--path= : Custom path to templates directory}
                             {--template= : Push only a specific template by filename}
+                            {--purpose= : Module to create the templates in (transactional or campaign; default transactional)}
                             {--dry-run : Preview what would be created without pushing}';
 
     /**
@@ -53,6 +55,11 @@ class PushCommand extends Command
      */
     protected array $skippedTemplates = [];
 
+    /**
+     * The module to create the templates in, or null to let the API decide.
+     */
+    protected ?TemplatePurpose $purpose = null;
+
     public function __construct(
         protected readonly LettrManager $lettr,
         protected readonly Filesystem $files,
@@ -69,6 +76,19 @@ class PushCommand extends Command
         $this->components->info('Pushing templates to Lettr...');
 
         $dryRun = (bool) $this->option('dry-run');
+
+        /** @var string|null $purposeOption */
+        $purposeOption = $this->option('purpose');
+
+        if ($purposeOption !== null) {
+            $this->purpose = TemplatePurpose::tryFrom($purposeOption);
+
+            if ($this->purpose === null) {
+                $this->components->error("Invalid --purpose '{$purposeOption}'. Use transactional or campaign.");
+
+                return self::FAILURE;
+            }
+        }
 
         // Discover or get path
         $path = $this->discoverPath();
@@ -244,6 +264,7 @@ class PushCommand extends Command
         $data = new CreateTemplateData(
             name: $name,
             html: $html,
+            purpose: $this->purpose,
         );
 
         return $this->withRateLimitRetry(fn () => $this->lettr->templates()->create($data));
@@ -311,6 +332,7 @@ class PushCommand extends Command
 
         $count = $dryRun ? count($this->pendingTemplates) : count($this->createdTemplates);
         $action = $dryRun ? 'Would create' : 'Created';
-        $this->components->info("Done! {$action} {$count} template(s).");
+        $module = $this->purpose !== null ? " as {$this->purpose->value}" : '';
+        $this->components->info("Done! {$action} {$count} template(s){$module}.");
     }
 }

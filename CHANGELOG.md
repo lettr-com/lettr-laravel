@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-09-07
+
+Covers the marketing side of templates. Everything here is additive — code written against 2.4.0 keeps compiling and sends byte-identical requests.
+
+### Added
+
+- **`Lettr::folders()`** — lists the folders templates are filed into, wrapping the SDK's new `FolderService`. This is what `CreateTemplateData::$folderId` was missing: nothing in the package ever returned a folder id, so a caller either omitted `folderId` and accepted whichever folder the API picked, or hardcoded an integer read out of an app URL by hand.
+
+  ```php
+  use Lettr\Dto\Folder\ListFoldersFilter;
+  use Lettr\Dto\Template\CreateTemplateData;
+  use Lettr\Enums\TemplatePurpose;
+  use Lettr\Laravel\Facades\Lettr;
+
+  $campaigns = Lettr::folders()
+      ->list(ListFoldersFilter::create()->purpose(TemplatePurpose::Campaign))
+      ->folders
+      ->first();
+
+  Lettr::templates()->create(new CreateTemplateData(
+      name: 'October Newsletter',
+      folderId: $campaigns?->id,
+      json: $topolJson,
+      purpose: TemplatePurpose::Campaign,
+  ));
+  ```
+
+  Each folder carries its `purpose` and `templatesCount`, so a campaign folder can be picked without guessing from the name. Read-only — creating, renaming and deleting folders stay in the app, because deleting one moves or deletes the templates inside it.
+- **Template `purpose`** throughout, via the SDK's new `Lettr\Enums\TemplatePurpose` (`Transactional`, `Campaign`): settable on `CreateTemplateData`, filterable on `ListTemplatesFilter`, and returned on every template response DTO. `Lettr::templates()` passes the DTOs straight through, so this needed no wrapper change.
+- **`lettr:push --purpose=`** — creates the pushed templates in one module. Without it no `purpose` key is sent at all and the API applies its own default (`transactional`), which is the right one for Blade mailables; the flag is there for the case where campaign HTML lives in the same directory. An unrecognised value fails the command before it touches the filesystem. `lettr:push` also picked up a README section — it was the one CLI command with none.
+
+### Changed
+
+- **Upgraded `lettr/lettr-php` to `^2.6.0`** for the purpose enum and the folder endpoint. The SDK change is additive: new constructor parameters were appended last on the existing DTOs, so positional construction keeps working, and `TransporterContract` is untouched, so custom transporter implementations are unaffected.
+
+### Notes
+
+- **There is no way to change a template's module after the fact.** `PUT /templates/{slug}` does not accept a `purpose`, so `UpdateTemplateData` deliberately has none — moving a template across modules has to copy its versions and merge tags into the other module's folder, which is a separate endpoint that does not exist yet. Set the purpose when you create the template.
+- **A response without `purpose` reads as `Transactional`.** That is what such a template is, so the field is a plain enum rather than a nullable one and never needs a null check — but it does mean an older API deployment is indistinguishable from a genuinely transactional template.
+
 ## [2.4.0] - 2026-08-14
 
 ### Added
