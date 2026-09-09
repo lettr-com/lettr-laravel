@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] - 2026-09-09
+
+Knowing when an imported template is actually ready, and — the headline — **queued sends can no longer deliver the same email twice**.
+
+### Added
+
+- **Idempotent queued sends, on by default.** A send issued from inside a queue job now carries a generated `Idempotency-Key`. If the job is retried — the API accepted the send, the response timed out, the job threw — the retry returns the original result instead of delivering a second email.
+
+  The key is `hash(job uuid + payload)`, and needs both halves. The **job uuid** is what survives a retry (Laravel re-pushes the identical payload, and `queue:retry` only resets `attempts` and `retry_until`) and what differs between two deliberate dispatches. The **payload hash** is what keeps a job that sends several emails working — one key per job would give the second email in a `foreach` a 409.
+
+  **Synchronous sends get no key.** A retried HTTP request is a new process, so there is nothing stable to derive one from; a key generated per call would change on every attempt and protect nothing. Pass one explicitly for those.
+
+  Three ways out:
+
+  ```php
+  // Your own key — an order id is more meaningful than a generated hash
+  Mail::lettr()->idempotencyKey('order-12345')->send(new OrderShipped($order));
+
+  // A deliberate resend: send it again, on purpose
+  Mail::lettr()->withoutIdempotency()->send(new OrderShipped($order));
+
+  // Or turn the default off everywhere
+  // config/lettr.php → 'idempotency' => ['enabled' => false]
+  ```
+
+  `LettrMailable` gained the same `idempotencyKey()` and `withoutIdempotency()` methods. Scheduled sends are unaffected — they go to a different endpoint that takes no key.
+
+- **`preparation_status` on template responses**, via lettr-php's new `TemplatePreparationStatus` (`Pending`, `Ready`, `Failed`). Creating or updating a template through the API defers image migration and HTML rendering to a background job; this says whether the content you sent is the content that will go out.
+
+  Mind that it is **not** the same question as "can I send this". After an *update* the previous render stays in place, so a `Pending` template is still sendable — it is serving the old content. That is why the helper is `->isSettled()`.
+
+- **`ListTemplatesFilter::folderId()`** — reconcile a bulk import with one `perPage(100)` call for the folder instead of a detail call per template, each dragging the full HTML payload against the same rate limit.
+
+- **`Support\CurrentQueueJob`** — the uuid of the job being processed, kept current by listeners on `JobProcessing` / `JobProcessed` / `JobFailed`. Scoped and cleared between jobs, since a worker is one long-running process.
+
+### Changed
+
+- **Upgraded `lettr/lettr-php` to `^2.7.0`.** Additive: new constructor parameters were appended last on the existing DTOs, and `TransporterContract` is untouched, so custom transporter implementations keep compiling. A custom transporter that does not implement the new `SupportsRequestHeaders` silently sends no idempotency key rather than failing — add the interface and one method to opt in.
+
+### Notes
+
+- **Keys are scoped per team *and* API key.** The same key through a different API key is a different key, so several workers with separate API keys will not deduplicate against each other.
+- The provider retains a key for **24 hours**.
+- A replay is a **success**, not an error: `$response->replayed` is true and no second email went out.
+
 ## [2.5.0] - 2026-09-07
 
 Covers the marketing side of templates. Everything here is additive — code written against 2.4.0 keeps compiling and sends byte-identical requests.

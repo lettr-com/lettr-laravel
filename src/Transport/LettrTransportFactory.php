@@ -7,7 +7,9 @@ namespace Lettr\Laravel\Transport;
 use Exception;
 use Lettr\Builders\EmailBuilder;
 use Lettr\Dto\Email\Attachment;
+use Lettr\Laravel\Support\IdempotencyKeyGenerator;
 use Lettr\Lettr;
+use Lettr\ValueObjects\IdempotencyKey;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\AbstractTransport;
@@ -26,7 +28,9 @@ class LettrTransportFactory extends AbstractTransport
      */
     public function __construct(
         protected Lettr $lettr,
-        protected array $config = []
+        protected array $config = [],
+        protected ?IdempotencyKeyGenerator $idempotencyKeys = null,
+        protected bool $idempotencyEnabled = true,
     ) {
         parent::__construct();
     }
@@ -109,10 +113,11 @@ class LettrTransportFactory extends AbstractTransport
 
             $scheduledAt = $this->getHeader($email, 'X-Lettr-Scheduled-At');
             if ($scheduledAt !== null) {
+                // Scheduling is a different endpoint and does not take a key.
                 $builder->scheduledAt($scheduledAt);
                 $result = $this->lettr->emails()->schedule($builder);
             } else {
-                $result = $this->lettr->emails()->send($builder);
+                $result = $this->lettr->emails()->send($builder, $this->resolveIdempotencyKey($email, $builder));
             }
         } catch (Exception $exception) {
             throw new TransportException(
@@ -123,6 +128,33 @@ class LettrTransportFactory extends AbstractTransport
         }
 
         $email->getHeaders()->addHeader('X-Lettr-Request-ID', (string) $result->requestId);
+    }
+
+    /**
+     * Decide what `Idempotency-Key`, if any, this send should carry.
+     *
+     * In precedence order: an explicit opt-out wins over everything, then a key
+     * the caller supplied, then a generated one - and that last only inside a
+     * queue job, which is the only place an identity survives the retry we are
+     * protecting against.
+     */
+    protected function resolveIdempotencyKey(Email $email, EmailBuilder $builder): ?IdempotencyKey
+    {
+        if ($this->getHeader($email, 'X-Lettr-Idempotency') === 'disabled') {
+            return null;
+        }
+
+        $explicit = $this->getHeader($email, 'X-Lettr-Idempotency-Key');
+
+        if ($explicit !== null && $explicit !== '') {
+            return new IdempotencyKey($explicit);
+        }
+
+        if (! $this->idempotencyEnabled || $this->idempotencyKeys === null) {
+            return null;
+        }
+
+        return $this->idempotencyKeys->for($builder->build());
     }
 
     /**

@@ -35,6 +35,7 @@ use Lettr\Enums\AudienceTopicVisibility;
 use Lettr\Enums\CampaignStatus;
 use Lettr\Enums\EventType;
 use Lettr\Enums\SegmentOperator;
+use Lettr\Enums\TemplatePreparationStatus;
 use Lettr\Enums\TemplatePurpose;
 use Lettr\Laravel\Facades\Lettr;
 use Lettr\Services\FolderService;
@@ -424,4 +425,54 @@ it('ListFoldersFilter sends nothing when empty', function () {
 
 it('the facade exposes the folder service', function () {
     expect(Lettr::folders())->toBeInstanceOf(FolderService::class);
+});
+
+// ---------------------------------------------------------------------------
+// Templates — preparation status and the folder filter
+// ---------------------------------------------------------------------------
+
+it('TemplatePreparationStatus exposes the three states', function () {
+    expect(TemplatePreparationStatus::Pending->value)->toBe('pending')
+        ->and(TemplatePreparationStatus::Ready->value)->toBe('ready')
+        ->and(TemplatePreparationStatus::Failed->value)->toBe('failed');
+});
+
+/**
+ * `isSettled()` answers "is what I sent what will go out", which is not the
+ * same question as "can I send this". A template being prepared after an update
+ * keeps its previous render and stays sendable.
+ */
+it('only a settled template reports isSettled', function () {
+    expect(TemplatePreparationStatus::Ready->isSettled())->toBeTrue()
+        ->and(TemplatePreparationStatus::Pending->isSettled())->toBeFalse()
+        ->and(TemplatePreparationStatus::Failed->isSettled())->toBeFalse();
+});
+
+/**
+ * An API deployment that predates the field returns nothing, and every template
+ * with HTML was usable there. Pending would look like a stalled queue.
+ */
+it('a missing or unknown preparation status reads as ready', function () {
+    expect(TemplatePreparationStatus::fromResponse(null))->toBe(TemplatePreparationStatus::Ready)
+        ->and(TemplatePreparationStatus::fromResponse('something-new'))->toBe(TemplatePreparationStatus::Ready);
+});
+
+it('ListTemplatesFilter serializes the folder filter', function () {
+    $filter = ListTemplatesFilter::create()
+        ->projectId(5)
+        ->folderId(10)
+        ->purpose(TemplatePurpose::Campaign)
+        ->perPage(100);
+
+    expect($filter->toArray())->toBe([
+        'project_id' => 5,
+        'folder_id' => 10,
+        'purpose' => 'campaign',
+        'per_page' => 100,
+    ]);
+});
+
+it('ListTemplatesFilter omits folder_id when it is unset', function () {
+    expect(ListTemplatesFilter::create()->projectId(5)->toArray())
+        ->toBe(['project_id' => 5]);
 });

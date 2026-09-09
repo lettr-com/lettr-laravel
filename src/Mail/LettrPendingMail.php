@@ -22,6 +22,10 @@ class LettrPendingMail extends PendingMail
 
     protected ?string $scheduledAt = null;
 
+    protected ?string $idempotencyKey = null;
+
+    protected bool $withoutIdempotency = false;
+
     public function __construct(MailerContract $mailer)
     {
         parent::__construct($mailer);
@@ -50,6 +54,33 @@ class LettrPendingMail extends PendingMail
     }
 
     /**
+     * Send this email under a specific idempotency key.
+     *
+     * Only applies to Lettr mailables - the key travels as a header the Lettr
+     * transport reads, and a plain Laravel mailable has nowhere to put it that
+     * survives being queued. Add the header yourself from the mailable's own
+     * `headers()` method for those.
+     */
+    public function idempotencyKey(string $key): static
+    {
+        $this->idempotencyKey = $key;
+        $this->withoutIdempotency = false;
+
+        return $this;
+    }
+
+    /**
+     * Send with no idempotency key, for a deliberate resend.
+     */
+    public function withoutIdempotency(): static
+    {
+        $this->withoutIdempotency = true;
+        $this->idempotencyKey = null;
+
+        return $this;
+    }
+
+    /**
      * Send a new mailable message instance, applying from address and scheduledAt if set.
      */
     public function send(MailableContract $mailable): ?SentMessage
@@ -60,6 +91,14 @@ class LettrPendingMail extends PendingMail
 
         if ($this->scheduledAt !== null && $mailable instanceof LettrMailable) {
             $mailable->scheduledAt($this->scheduledAt);
+        }
+
+        if ($mailable instanceof LettrMailable) {
+            if ($this->withoutIdempotency) {
+                $mailable->withoutIdempotency();
+            } elseif ($this->idempotencyKey !== null) {
+                $mailable->idempotencyKey($this->idempotencyKey);
+            }
         }
 
         return parent::send($mailable);
