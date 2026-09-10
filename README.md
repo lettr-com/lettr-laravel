@@ -377,6 +377,63 @@ class WelcomeEmail extends LettrMailable
 }
 ```
 
+## Idempotent Sends
+
+**Emails sent from inside a queue job are idempotent by default.** If a job is
+retried — the API accepted the send but the response timed out — the retry
+returns the original result instead of delivering a second email.
+
+Nothing to configure. The key is derived from the job's uuid plus a hash of the
+payload, so it is stable across retries of one send, different for every fresh
+dispatch, and different for each email a job sends in a loop.
+
+**Synchronous sends carry no key.** A retried HTTP request is a new process, so
+there is nothing stable to derive one from. Pass your own key for those:
+
+```php
+use Illuminate\Support\Facades\Mail;
+
+// Your own key — an order id is more meaningful than a generated hash
+Mail::lettr()->idempotencyKey('order-12345')->send(new OrderShipped($order));
+
+// A deliberate resend: send it again, on purpose
+Mail::lettr()->withoutIdempotency()->send(new OrderShipped($order));
+```
+
+`LettrMailable` has the same two methods, so a mailable can decide for itself:
+
+```php
+class OrderShipped extends LettrMailable
+{
+    public function build(): static
+    {
+        return parent::build()->idempotencyKey("order-{$this->order->id}-shipped");
+    }
+}
+```
+
+To turn the default off everywhere, in `config/lettr.php`:
+
+```php
+'idempotency' => [
+    'enabled' => env('LETTR_IDEMPOTENCY_ENABLED', false),
+],
+```
+
+An explicit key is still sent when the default is off — disabling the default is
+not the same as refusing a key you asked for.
+
+| | |
+| --- | --- |
+| Applies to | Queued sends by default; synchronous sends only with an explicit key |
+| Format | 1–255 characters, `[A-Za-z0-9._-]` |
+| Retention | 24 hours |
+| Scope | Per team **and** API key |
+| Scheduled sends | Not covered — a different endpoint that takes no key |
+
+A replay is a success, not an error. `$response->replayed` is true and no second
+email went out.
+
 ## Error Handling
 
 ```php
