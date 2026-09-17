@@ -9,10 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ### Added
 
 - **Autoload warning** — `lettr:generate-enum`, `lettr:generate-dtos` and `lettr:pull` warn when a generated class won't load because its configured namespace doesn't match the path under the app's PSR-4 mapping.
+- **Generated-file docblocks** — every generated enum, DTO and Mailable gets a class docblock saying what it is (e.g. "Merge tags of the Lettr template `order`"), which command generated it, and that running the command again overwrites the file.
 - **Overwrite warning** — `lettr:pull`, `lettr:generate-enum` and `lettr:generate-dtos` still rewrite every file they generate, but now mark files that already existed with ↻ in the summary and end with a warning that local changes to them are gone. `--dry-run` reports what would be overwritten.
 
 ### Changed
 
+- **Generated code follows Laravel's code style** and passes Pint with the Laravel preset: imports are sorted and same-namespace imports dropped, DTO docblocks use Laravel's alignment and only mark optional loops `|null`, `toArray()` declares `@return array<string, mixed>`, and a Mailable for a template without merge tags has no empty constructor. Generated Blade Mailables no longer repeat `content()` and `buildViewData()`, which `LettrMailable` already provides.
 - **API-template Mailables no longer set a subject.** `lettr:pull --with-mailables --as-html` (and `--skip-templates`) used to generate `subject: Str::headline($template->name)`, which replaced the subject configured on the template in Lettr. The template's own subject is now used; set one in `envelope()` to override it. Blade Mailables keep their generated subject.
 - **Loops in pulled Blade views are null-safe and use array access.** `{{#each items}}{{this.name}}` now converts to `@foreach($items ?? [] as $item){{ $item['name'] }}` instead of `@foreach($items as $item){{ $item->name }}`, matching the arrays generated DTOs pass to the view and rendering nothing when an optional loop is left out. `lettr:push` converts both back.
 - **`lettr:push` looks in `lettr.templates.blade_path` first** when `--path` isn't given, so it finds what `lettr:pull` wrote. A relative `--path` is resolved against the project root.

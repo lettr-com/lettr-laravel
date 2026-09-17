@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace {{ namespace }};
 
-use Illuminate\Mail\Mailables\Envelope;
-use Lettr\Laravel\Mail\LettrMailable;
-{{ dtoImport }}
+{{ imports }}
 
+{{ docblock }}
 class {{ class }} extends LettrMailable
 {
     protected ?string $templateSlug = {{ slug }};
@@ -16,14 +15,7 @@ class {{ class }} extends LettrMailable
      * Path to the local HTML template file (for preview/testing).
      */
     protected ?string $templateHtmlPath = {{ htmlPath }};
-
-    /**
-     * Create a new message instance.
-     */
-    public function __construct(
-        {{ dtoProperty }}
-    ) {}
-
+{{ constructor }}
     /**
      * Get the message envelope.
      *
@@ -32,6 +24,5 @@ class {{ class }} extends LettrMailable
     public function envelope(): Envelope
     {
         return new Envelope;
-    }
-{{ withMergeTagsMethod }}
+    }{{ withMergeTagsMethod }}
 }

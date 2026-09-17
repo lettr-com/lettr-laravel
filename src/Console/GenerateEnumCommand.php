@@ -11,6 +11,7 @@ use Lettr\Laravel\Concerns\FetchesAllTemplates;
 use Lettr\Laravel\Concerns\WarnsAboutOverwrites;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Support\AutoloadCheck;
+use Lettr\Laravel\Support\GeneratedCode;
 use Lettr\Laravel\Support\PhpIdentifier;
 use Lettr\Laravel\Support\TemplatesConfig;
 
@@ -97,8 +98,8 @@ class GenerateEnumCommand extends Command
         // Build enum content
         $stub = $this->getStubContent();
         $content = str_replace(
-            ['{{ namespace }}', '{{ class }}', '{{ cases }}'],
-            [$namespace, $className, $cases],
+            ['{{ namespace }}', '{{ docblock }}', '{{ class }}', '{{ cases }}'],
+            [$namespace, GeneratedCode::docblock('Slugs of the templates in your Lettr account.', '`php artisan lettr:generate-enum`', "don't edit it by hand."), $className, $cases],
             $stub
         );
 

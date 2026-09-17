@@ -35,7 +35,7 @@ class DtoGenerator
         $this->generatedDtos = [];
 
         $baseClassName = $this->slugToClassName($templateSlug).'Data';
-        $this->generateDto($baseClassName, $mergeTags, $dryRun);
+        $this->generateDto($baseClassName, $mergeTags, $dryRun, $templateSlug);
 
         return $this->generatedDtos[0] ?? null;
     }
@@ -55,7 +55,7 @@ class DtoGenerator
      *
      * @param  array<int, MergeTag>  $mergeTags
      */
-    protected function generateDto(string $className, array $mergeTags, bool $dryRun): void
+    protected function generateDto(string $className, array $mergeTags, bool $dryRun, string $templateSlug = ''): void
     {
         $dtoPath = TemplatesConfig::path('dto_path');
         $namespace = TemplatesConfig::namespace('dto_namespace');
@@ -70,7 +70,7 @@ class DtoGenerator
         // Generate nested DTOs first (for array loops)
         foreach ($mergeTags as $mergeTag) {
             if ($this->hasNestedChildren($mergeTag)) {
-                $this->generateNestedDto($nestedClassNames[$mergeTag->key], $mergeTag->children ?? [], $dryRun);
+                $this->generateNestedDto($nestedClassNames[$mergeTag->key], $mergeTag->children ?? [], $dryRun, $templateSlug, $mergeTag->key);
             }
         }
 
@@ -78,12 +78,12 @@ class DtoGenerator
         $properties = $this->generateProperties($mergeTags, $propertyNames);
         $toArrayBody = $this->generateToArrayBody($mergeTags, $propertyNames, $nestedClassNames);
         $docblock = $this->generateDocblock($mergeTags, $propertyNames, $nestedClassNames);
-        $imports = $this->generateImports($mergeTags, $nestedClassNames);
+        $classDocblock = $this->generateClassDocblock("Merge tags of the Lettr template `{$templateSlug}`.");
 
         $stub = $this->getStubContent();
         $content = str_replace(
-            ['{{ namespace }}', '{{ imports }}', '{{ class }}', '{{ docblock }}', '{{ properties }}', '{{ toArrayBody }}'],
-            [$namespace, $imports, $className, $docblock, $properties, $toArrayBody],
+            ['{{ namespace }}', '{{ classDocblock }}', '{{ class }}', '{{ docblock }}', '{{ properties }}', '{{ toArrayBody }}'],
+            [$namespace, $classDocblock, $className, $docblock, $properties, $toArrayBody],
             $stub
         );
 
@@ -106,7 +106,7 @@ class DtoGenerator
      *
      * @param  array<int, MergeTagChild>  $children
      */
-    protected function generateNestedDto(string $className, array $children, bool $dryRun): void
+    protected function generateNestedDto(string $className, array $children, bool $dryRun, string $templateSlug = '', string $loopKey = ''): void
     {
         $dtoPath = TemplatesConfig::path('dto_path');
         $namespace = TemplatesConfig::namespace('dto_namespace');
@@ -118,12 +118,12 @@ class DtoGenerator
         $propertyNames = $this->propertyNames(array_map(fn (MergeTagChild $child): string => $child->key, $children));
         $properties = $this->generateChildProperties($children, $propertyNames);
         $toArrayBody = $this->generateChildToArrayBody($children, $propertyNames);
-        $imports = '';
+        $classDocblock = $this->generateClassDocblock("One item of the `{$loopKey}` loop in the Lettr template `{$templateSlug}`.");
 
         $stub = $this->getStubContent();
         $content = str_replace(
-            ['{{ namespace }}', '{{ imports }}', '{{ class }}', '{{ docblock }}', '{{ properties }}', '{{ toArrayBody }}'],
-            [$namespace, $imports, $className, '', $properties, $toArrayBody],
+            ['{{ namespace }}', '{{ classDocblock }}', '{{ class }}', '{{ docblock }}', '{{ properties }}', '{{ toArrayBody }}'],
+            [$namespace, $classDocblock, $className, '', $properties, $toArrayBody],
             $stub
         );
 
@@ -142,27 +142,15 @@ class DtoGenerator
     }
 
     /**
-     * Generate import statements for nested DTO classes.
-     *
-     * @param  array<int, MergeTag>  $mergeTags
-     * @param  array<string, string>  $nestedClassNames
+     * The class docblock of a generated DTO.
      */
-    protected function generateImports(array $mergeTags, array $nestedClassNames): string
+    protected function generateClassDocblock(string $description): string
     {
-        $imports = [];
-        $namespace = TemplatesConfig::namespace('dto_namespace');
-
-        foreach ($mergeTags as $tag) {
-            if ($this->hasNestedChildren($tag)) {
-                $imports[] = "use {$namespace}\\{$nestedClassNames[$tag->key]};";
-            }
-        }
-
-        if (empty($imports)) {
-            return '';
-        }
-
-        return "\n".implode("\n", $imports);
+        return GeneratedCode::docblock(
+            $description,
+            '`php artisan lettr:generate-dtos` or `php artisan lettr:pull --with-mailables`',
+            "don't edit it by hand.",
+        );
     }
 
     /**
@@ -178,7 +166,8 @@ class DtoGenerator
 
         foreach ($mergeTags as $tag) {
             if ($this->hasNestedChildren($tag)) {
-                $params[] = "     * @param {$nestedClassNames[$tag->key]}[]|null \${$propertyNames[$tag->key]}";
+                $nullable = $tag->required ? '' : '|null';
+                $params[] = "     * @param  {$nestedClassNames[$tag->key]}[]{$nullable}  \${$propertyNames[$tag->key]}";
             }
         }
 

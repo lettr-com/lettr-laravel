@@ -6,6 +6,7 @@ namespace Lettr\Laravel\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Support\Str;
 use Illuminate\View\FileViewFinder;
 use Lettr\Dto\Template\MergeTag;
@@ -14,8 +15,10 @@ use Lettr\Dto\Template\TemplateDetail;
 use Lettr\Laravel\Concerns\FetchesAllTemplates;
 use Lettr\Laravel\Concerns\WarnsAboutOverwrites;
 use Lettr\Laravel\LettrManager;
+use Lettr\Laravel\Mail\LettrMailable;
 use Lettr\Laravel\Support\AutoloadCheck;
 use Lettr\Laravel\Support\DtoGenerator;
+use Lettr\Laravel\Support\GeneratedCode;
 use Lettr\Laravel\Support\PhpIdentifier;
 use Lettr\Laravel\Support\SparkpostToBladeConverter;
 use Lettr\Laravel\Support\TemplatesConfig;
@@ -325,37 +328,36 @@ class PullCommand extends Command
 
         // No subject: the template's own subject in Lettr is used unless the request sets one
 
-        // Generate DTO-related stub content
-        $hasMergeTags = ! empty($mergeTags);
-        $dtoClassName = $this->dtoGenerator->getDtoClassName($template->slug);
-        $dtoFullClass = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
-
-        $dtoImport = $hasMergeTags ? "use {$dtoFullClass};" : '';
-        $dtoProperty = $hasMergeTags ? "public readonly {$dtoClassName} \$data," : '';
-        $withMergeTagsMethod = $hasMergeTags ? $this->generateWithMergeTagsMethod() : '';
-
         // Generate HTML path relative to base path
         $htmlBasePath = TemplatesConfig::path('html_path');
         $htmlPath = str_replace(base_path().'/', '', $htmlBasePath).'/'.$template->slug.'.html';
 
+        $imports = [Envelope::class, LettrMailable::class];
+
+        if ($mergeTags !== []) {
+            $imports[] = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
+        }
+
         return str_replace(
             [
                 '{{ namespace }}',
+                '{{ imports }}',
+                '{{ docblock }}',
                 '{{ class }}',
                 '{{ slug }}',
                 '{{ htmlPath }}',
-                '{{ dtoImport }}',
-                '{{ dtoProperty }}',
+                '{{ constructor }}',
                 '{{ withMergeTagsMethod }}',
             ],
             [
                 $namespace,
+                GeneratedCode::imports($namespace, $imports),
+                $this->mailableDocblock("Sends the Lettr template `{$template->slug}` through the Lettr API".($mergeTags !== [] ? ', with the merge tags passed to the constructor.' : '.')),
                 $className,
                 var_export($template->slug, true),
                 var_export($htmlPath, true),
-                $dtoImport,
-                $dtoProperty,
-                $withMergeTagsMethod,
+                $this->generateConstructor($template, $mergeTags),
+                $mergeTags !== [] ? $this->generateWithMergeTagsMethod() : '',
             ],
             $stub
         );
@@ -374,39 +376,75 @@ class PullCommand extends Command
         // Convert template name to a readable subject
         $subject = Str::headline($template->name);
 
-        // Generate DTO-related stub content
-        $hasMergeTags = ! empty($mergeTags);
-        $dtoClassName = $this->dtoGenerator->getDtoClassName($template->slug);
-        $dtoFullClass = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
-
-        $dtoImport = $hasMergeTags ? "use {$dtoFullClass};" : '';
-        $dtoProperty = $hasMergeTags ? "public readonly {$dtoClassName} \$data," : '';
-        $withMergeTagsMethod = $hasMergeTags ? $this->generateWithMergeTagsMethod() : '';
-
         // Generate Blade view path (dot notation for Laravel views)
         $bladeView = $this->bladeViewName($template->slug);
+
+        $imports = [Envelope::class, LettrMailable::class];
+
+        if ($mergeTags !== []) {
+            $imports[] = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
+        }
 
         return str_replace(
             [
                 '{{ namespace }}',
+                '{{ imports }}',
+                '{{ docblock }}',
                 '{{ class }}',
                 '{{ bladeView }}',
                 '{{ subject }}',
-                '{{ dtoImport }}',
-                '{{ dtoProperty }}',
+                '{{ constructor }}',
                 '{{ withMergeTagsMethod }}',
             ],
             [
                 $namespace,
+                GeneratedCode::imports($namespace, $imports),
+                $this->mailableDocblock("Sends the Blade view `{$bladeView}`, pulled from the Lettr template `{$template->slug}` and rendered by your app."),
                 $className,
                 var_export($bladeView, true),
                 var_export($subject, true),
-                $dtoImport,
-                $dtoProperty,
-                $withMergeTagsMethod,
+                $this->generateConstructor($template, $mergeTags),
+                $mergeTags !== [] ? $this->generateWithMergeTagsMethod() : '',
             ],
             $stub
         );
+    }
+
+    /**
+     * The class docblock of a generated Mailable.
+     */
+    protected function mailableDocblock(string $description): string
+    {
+        return GeneratedCode::docblock(
+            $description,
+            '`php artisan lettr:pull --with-mailables`',
+            'commit any changes you make here before pulling again.',
+        );
+    }
+
+    /**
+     * Generate the Mailable constructor, or nothing when the template has no merge tags.
+     *
+     * @param  array<int, MergeTag>  $mergeTags
+     */
+    protected function generateConstructor(TemplateDetail $template, array $mergeTags): string
+    {
+        if ($mergeTags === []) {
+            return '';
+        }
+
+        $dtoClassName = $this->dtoGenerator->getDtoClassName($template->slug);
+
+        return <<<PHP
+
+    /**
+     * Create a new message instance.
+     */
+    public function __construct(
+        public readonly {$dtoClassName} \$data,
+    ) {}
+
+PHP;
     }
 
     /**
@@ -415,6 +453,7 @@ class PullCommand extends Command
     protected function generateWithMergeTagsMethod(): string
     {
         return <<<'PHP'
+
 
     /**
      * Get the merge tags for this mailable.
