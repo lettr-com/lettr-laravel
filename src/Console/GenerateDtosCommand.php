@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace Lettr\Laravel\Console;
 
 use Illuminate\Console\Command;
-use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Dto\Template\Template;
-use Lettr\Laravel\Concerns\ThrottlesApiRequests;
+use Lettr\Laravel\Concerns\FetchesAllTemplates;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Support\DtoGenerator;
 
@@ -15,7 +14,7 @@ use function Laravel\Prompts\progress;
 
 class GenerateDtosCommand extends Command
 {
-    use ThrottlesApiRequests;
+    use FetchesAllTemplates;
 
     /**
      * The name and signature of the console command.
@@ -65,6 +64,10 @@ class GenerateDtosCommand extends Command
         $templates = $this->fetchTemplates($templateSlug);
 
         if (empty($templates)) {
+            if ($templateSlug !== null) {
+                return self::FAILURE;
+            }
+
             $this->components->warn('No templates found.');
 
             return self::SUCCESS;
@@ -86,8 +89,7 @@ class GenerateDtosCommand extends Command
      */
     protected function fetchTemplates(?string $templateSlug): array
     {
-        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100)));
-        $templates = $response->templates->all();
+        $templates = $this->fetchAllTemplates();
 
         // Filter by slug if specified
         if ($templateSlug !== null) {

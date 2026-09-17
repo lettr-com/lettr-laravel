@@ -287,6 +287,7 @@ it('generates mailable classes when with-mailables option is provided', function
         ));
 
     $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
+    $this->filesystem->shouldReceive('exists')->andReturn(false);
 
     // Should write blade, DTO, and mailable
     $this->filesystem->shouldReceive('put')->times(3);

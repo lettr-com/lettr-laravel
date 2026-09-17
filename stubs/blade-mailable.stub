@@ -14,7 +14,7 @@ class {{ class }} extends LettrMailable
     /**
      * The Blade view for this email.
      */
-    protected ?string $bladeView = '{{ bladeView }}';
+    protected ?string $bladeView = {{ bladeView }};
 
     /**
      * Create a new message instance.
@@ -29,7 +29,7 @@ class {{ class }} extends LettrMailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: '{{ subject }}',
+            subject: {{ subject }},
         );
     }
 

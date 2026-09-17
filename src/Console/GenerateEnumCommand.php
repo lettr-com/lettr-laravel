@@ -6,17 +6,16 @@ namespace Lettr\Laravel\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
-use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Dto\Template\Template;
-use Lettr\Laravel\Concerns\ThrottlesApiRequests;
+use Lettr\Laravel\Concerns\FetchesAllTemplates;
 use Lettr\Laravel\LettrManager;
+use Lettr\Laravel\Support\PhpIdentifier;
 
 use function Laravel\Prompts\progress;
 
 class GenerateEnumCommand extends Command
 {
-    use ThrottlesApiRequests;
+    use FetchesAllTemplates;
 
     /**
      * The name and signature of the console command.
@@ -71,9 +70,7 @@ class GenerateEnumCommand extends Command
      */
     protected function fetchTemplates(): array
     {
-        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100)));
-
-        return $response->templates->all();
+        return $this->fetchAllTemplates();
     }
 
     /**
@@ -128,7 +125,7 @@ class GenerateEnumCommand extends Command
 
         foreach ($templates as $template) {
             $caseName = $this->slugToCaseName($template->slug);
-            $lines[] = "    case {$caseName} = '{$template->slug}';";
+            $lines[] = "    case {$caseName} = ".var_export($template->slug, true).';';
             $progress->advance();
         }
 
@@ -142,7 +139,7 @@ class GenerateEnumCommand extends Command
      */
     protected function slugToCaseName(string $slug): string
     {
-        return Str::studly($slug);
+        return PhpIdentifier::enumCase($slug);
     }
 
     /**

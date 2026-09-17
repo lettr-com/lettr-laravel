@@ -489,6 +489,7 @@ php artisan lettr:pull --dry-run
 | `--as-html` | Save as raw HTML instead of Blade |
 | `--with-mailables` | Also generate Mailable and DTO classes |
 | `--skip-templates` | Skip downloading templates, only generate DTOs and Mailables |
+| `--force` | Overwrite Mailable classes that already exist (they are skipped otherwise) |
 | `--dry-run` | Preview what would be downloaded |
 
 ### `lettr:generate-enum`

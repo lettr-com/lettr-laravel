@@ -157,10 +157,14 @@ class BladeToSparkpostConverter
             $blockContent
         ) ?? $blockContent;
 
-        // Convert $item['key'] to this.key
+        // Convert $item['key']['nested'] to this.key.nested
         $blockContent = preg_replace_callback(
-            '/\$'.preg_quote($itemVar, '/').'\[([\'"])(\w+)\1\]/',
-            fn (array $matches) => 'this.'.$matches[2],
+            '/\$'.preg_quote($itemVar, '/').'((?:\[([\'"])\w+\2\])+)/',
+            function (array $matches): string {
+                preg_match_all('/\[[\'"](\w+)[\'"]\]/', $matches[1], $keys);
+
+                return 'this.'.implode('.', $keys[1]);
+            },
             $blockContent
         ) ?? $blockContent;
 

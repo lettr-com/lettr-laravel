@@ -10,12 +10,12 @@ use Lettr\Laravel\Mail\LettrMailable;
 
 class {{ class }} extends LettrMailable
 {
-    protected ?string $templateSlug = '{{ slug }}';
+    protected ?string $templateSlug = {{ slug }};
 
     /**
      * Path to the local HTML template file (for preview/testing).
      */
-    protected ?string $templateHtmlPath = '{{ htmlPath }}';
+    protected ?string $templateHtmlPath = {{ htmlPath }};
 
     /**
      * Create a new message instance.
@@ -26,12 +26,12 @@ class {{ class }} extends LettrMailable
 
     /**
      * Get the message envelope.
+     *
+     * The subject comes from the template in Lettr. Set one here to override it.
      */
     public function envelope(): Envelope
     {
-        return new Envelope(
-            subject: '{{ subject }}',
-        );
+        return new Envelope;
     }
 {{ withMergeTagsMethod }}
 }

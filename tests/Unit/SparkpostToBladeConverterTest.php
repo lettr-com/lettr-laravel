@@ -95,7 +95,7 @@ describe('foreach loop conversion', function () {
 {{this.name}}
 {{/each}}';
         $expected = '@foreach($items as $item)
-{{ $item->name }}
+{{ $item[\'name\'] }}
 @endforeach';
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
@@ -117,7 +117,7 @@ describe('foreach loop conversion', function () {
 {{this.customer.name}}
 {{/each}}';
         $expected = '@foreach($orders as $order)
-{{ $order->customer->name }}
+{{ $order[\'customer\'][\'name\'] }}
 @endforeach';
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
@@ -140,14 +140,14 @@ Index: {{ $loop->index }}
 
     it('uses singular form for item variable', function () {
         $sparkpost = '{{#each users}}{{this.email}}{{/each}}';
-        $expected = '@foreach($users as $user){{ $user->email }}@endforeach';
+        $expected = "@foreach(\$users as \$user){{ \$user['email'] }}@endforeach";
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
     });
 
     it('handles collection names that are already singular', function () {
         $sparkpost = '{{#each data}}{{this.value}}{{/each}}';
-        $expected = '@foreach($data as $dataItem){{ $dataItem->value }}@endforeach';
+        $expected = "@foreach(\$data as \$dataItem){{ \$dataItem['value'] }}@endforeach";
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
     });
@@ -280,7 +280,7 @@ describe('complex templates', function () {
     <ul>
     @foreach($orders as $order)
         <li>
-            Order #{{ $order->id }}: {{ $order->total }}
+            Order #{{ $order[\'id\'] }}: {{ $order[\'total\'] }}
             @if($loop->last)
             (Most recent)
             @endif
@@ -353,7 +353,7 @@ describe('nested loops', function () {
         $result = $this->converter->convert($sparkpost);
 
         expect($result)->toContain('@foreach($categories as $category)');
-        expect($result)->toContain('{{ $category->name }}');
+        expect($result)->toContain("{{ \$category['name'] }}");
         expect($result)->toContain('@endforeach');
     });
 });
