@@ -79,7 +79,7 @@ class BladeToSparkpostConverter
     protected function convertForeach(string $content): string
     {
         // Process foreach blocks from inside out to handle nesting
-        while (preg_match('/@foreach\s*\(\s*\$(\w+)\s+as\s+(?:\$\w+\s*=>\s*)?\$(\w+)\s*\)/', $content, $match, \PREG_OFFSET_CAPTURE)) {
+        while (preg_match('/@foreach\s*\(\s*\$(\w+)(?:\s*\?\?\s*\[\s*\])?\s+as\s+(?:\$\w+\s*=>\s*)?\$(\w+)\s*\)/', $content, $match, \PREG_OFFSET_CAPTURE)) {
             $fullMatch = $match[0][0];
             $collection = $match[1][0];
             $itemVar = $match[2][0];

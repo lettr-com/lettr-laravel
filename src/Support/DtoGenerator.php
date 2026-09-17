@@ -12,7 +12,7 @@ use Lettr\Dto\Template\MergeTagChild;
 class DtoGenerator
 {
     /**
-     * @var array<int, array{class: string, path: string}>
+     * @var array<int, array{class: string, path: string, overwritten: bool}>
      */
     protected array $generatedDtos = [];
 
@@ -24,7 +24,7 @@ class DtoGenerator
      * Generate DTO classes for the given merge tags.
      *
      * @param  array<int, MergeTag>  $mergeTags
-     * @return array{class: string, path: string}|null Returns null if no merge tags
+     * @return array{class: string, path: string, overwritten: bool}|null Returns null if no merge tags
      */
     public function generate(string $templateSlug, array $mergeTags, bool $dryRun = false): ?array
     {
@@ -43,7 +43,7 @@ class DtoGenerator
     /**
      * Get all generated DTOs (including nested ones).
      *
-     * @return array<int, array{class: string, path: string}>
+     * @return array<int, array{class: string, path: string, overwritten: bool}>
      */
     public function getGeneratedDtos(): array
     {
@@ -57,8 +57,8 @@ class DtoGenerator
      */
     protected function generateDto(string $className, array $mergeTags, bool $dryRun): void
     {
-        $dtoPath = config('lettr.templates.dto_path');
-        $namespace = config('lettr.templates.dto_namespace');
+        $dtoPath = TemplatesConfig::path('dto_path');
+        $namespace = TemplatesConfig::namespace('dto_namespace');
 
         $fullPath = $dtoPath.'/'.$className.'.php';
         $relativePath = str_replace(base_path().'/', '', $fullPath);
@@ -87,6 +87,8 @@ class DtoGenerator
             $stub
         );
 
+        $overwritten = $this->files->exists($fullPath);
+
         if (! $dryRun) {
             $this->ensureDirectoryExists($dtoPath);
             $this->files->put($fullPath, $content);
@@ -95,6 +97,7 @@ class DtoGenerator
         $this->generatedDtos[] = [
             'class' => $fullyQualifiedClass,
             'path' => $relativePath,
+            'overwritten' => $overwritten,
         ];
     }
 
@@ -105,8 +108,8 @@ class DtoGenerator
      */
     protected function generateNestedDto(string $className, array $children, bool $dryRun): void
     {
-        $dtoPath = config('lettr.templates.dto_path');
-        $namespace = config('lettr.templates.dto_namespace');
+        $dtoPath = TemplatesConfig::path('dto_path');
+        $namespace = TemplatesConfig::namespace('dto_namespace');
 
         $fullPath = $dtoPath.'/'.$className.'.php';
         $relativePath = str_replace(base_path().'/', '', $fullPath);
@@ -124,6 +127,8 @@ class DtoGenerator
             $stub
         );
 
+        $overwritten = $this->files->exists($fullPath);
+
         if (! $dryRun) {
             $this->ensureDirectoryExists($dtoPath);
             $this->files->put($fullPath, $content);
@@ -132,6 +137,7 @@ class DtoGenerator
         $this->generatedDtos[] = [
             'class' => $fullyQualifiedClass,
             'path' => $relativePath,
+            'overwritten' => $overwritten,
         ];
     }
 
@@ -144,7 +150,7 @@ class DtoGenerator
     protected function generateImports(array $mergeTags, array $nestedClassNames): string
     {
         $imports = [];
-        $namespace = config('lettr.templates.dto_namespace');
+        $namespace = TemplatesConfig::namespace('dto_namespace');
 
         foreach ($mergeTags as $tag) {
             if ($this->hasNestedChildren($tag)) {
@@ -436,7 +442,7 @@ class DtoGenerator
      */
     public function getFullyQualifiedDtoClassName(string $templateSlug): string
     {
-        $namespace = config('lettr.templates.dto_namespace');
+        $namespace = TemplatesConfig::namespace('dto_namespace');
 
         return $namespace.'\\'.$this->getDtoClassName($templateSlug);
     }

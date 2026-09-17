@@ -190,6 +190,12 @@ Index: {{@index}}
         expect($this->converter->convert($blade))->toBe($expected);
     });
 
+    it('round-trips a pulled loop with a null fallback and nested array access', function () {
+        $blade = "@foreach(\$orders ?? [] as \$order){{ \$order['customer']['name'] }}@endforeach";
+
+        expect($this->converter->convert($blade))->toBe('{{#each orders}}{{this.customer.name}}{{/each}}');
+    });
+
     it('converts array access within loop', function () {
         $blade = "@foreach(\$items as \$item)
 {{ \$item['name'] }}

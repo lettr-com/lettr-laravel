@@ -139,7 +139,8 @@ class SparkpostToBladeConverter
             $beforeBlock = substr($content, 0, $startPos);
             $afterBlock = substr($content, $endPos + strlen('{{/each}}'));
 
-            $content = $beforeBlock.'@foreach($'.$collection.' as $'.$itemVar.')'.$blockContent.'@endforeach'.$afterBlock;
+            // `?? []` so an optional loop left out renders nothing, as {{#each}} does
+            $content = $beforeBlock.'@foreach($'.$collection.' ?? [] as $'.$itemVar.')'.$blockContent.'@endforeach'.$afterBlock;
         }
 
         return $content;

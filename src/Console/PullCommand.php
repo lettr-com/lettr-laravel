@@ -12,16 +12,20 @@ use Lettr\Dto\Template\MergeTag;
 use Lettr\Dto\Template\Template;
 use Lettr\Dto\Template\TemplateDetail;
 use Lettr\Laravel\Concerns\FetchesAllTemplates;
+use Lettr\Laravel\Concerns\WarnsAboutOverwrites;
 use Lettr\Laravel\LettrManager;
+use Lettr\Laravel\Support\AutoloadCheck;
 use Lettr\Laravel\Support\DtoGenerator;
 use Lettr\Laravel\Support\PhpIdentifier;
 use Lettr\Laravel\Support\SparkpostToBladeConverter;
+use Lettr\Laravel\Support\TemplatesConfig;
 
 use function Laravel\Prompts\progress;
 
 class PullCommand extends Command
 {
     use FetchesAllTemplates;
+    use WarnsAboutOverwrites;
 
     /**
      * The name and signature of the console command.
@@ -33,8 +37,7 @@ class PullCommand extends Command
                             {--dry-run : Preview what would be downloaded without writing files}
                             {--template= : Pull only a specific template by slug}
                             {--as-html : Save as raw HTML instead of converting to Blade}
-                            {--skip-templates : Skip downloading templates, only generate DTOs and Mailables}
-                            {--force : Overwrite Mailable classes that already exist}';
+                            {--skip-templates : Skip downloading templates, only generate DTOs and Mailables}';
 
     /**
      * The console command description.
@@ -44,17 +47,17 @@ class PullCommand extends Command
     protected $description = 'Pull email templates from Lettr API as Blade files';
 
     /**
-     * @var array<int, array{slug: string, path: string}>
+     * @var array<int, array{slug: string, path: string, overwritten: bool}>
      */
     protected array $downloadedTemplates = [];
 
     /**
-     * @var array<int, array{class: string, path: string}>
+     * @var array<int, array{class: string, path: string, overwritten: bool}>
      */
     protected array $generatedMailables = [];
 
     /**
-     * @var array<int, array{class: string, path: string}>
+     * @var array<int, array{class: string, path: string, overwritten: bool}>
      */
     protected array $generatedDtos = [];
 
@@ -62,13 +65,6 @@ class PullCommand extends Command
      * @var array<int, string>
      */
     protected array $skippedTemplates = [];
-
-    /**
-     * Mailables left alone because they already exist and --force was not given.
-     *
-     * @var array<int, array{class: string, path: string}>
-     */
-    protected array $skippedMailables = [];
 
     /**
      * Whether the blade_path warning has been shown this run.
@@ -89,6 +85,10 @@ class PullCommand extends Command
      */
     public function handle(): int
     {
+        // Artisan reuses the command instance within a process, so start each run clean
+        $this->downloadedTemplates = $this->generatedMailables = $this->generatedDtos = $this->skippedTemplates = [];
+        $this->warnedAboutBladePath = false;
+
         $this->components->info('Pulling templates from Lettr...');
 
         /** @var string|null $templateSlug */
@@ -97,7 +97,6 @@ class PullCommand extends Command
         $withMailables = (bool) $this->option('with-mailables');
         $asHtml = (bool) $this->option('as-html');
         $skipTemplates = (bool) $this->option('skip-templates');
-        $force = (bool) $this->option('force');
 
         // Fetch templates
         $templates = $this->fetchTemplates($templateSlug);
@@ -113,7 +112,17 @@ class PullCommand extends Command
         }
 
         // Process templates with progress bar
-        $this->processTemplates($templates, $dryRun, $withMailables, $asHtml, $skipTemplates, $force);
+        $this->processTemplates($templates, $dryRun, $withMailables, $asHtml, $skipTemplates);
+
+        if (! $dryRun) {
+            if (isset($this->generatedDtos[0])) {
+                $this->warnIfNotAutoloadable($this->generatedDtos[0]['class'], TemplatesConfig::path('dto_path'));
+            }
+
+            if (isset($this->generatedMailables[0])) {
+                $this->warnIfNotAutoloadable($this->generatedMailables[0]['class'], TemplatesConfig::path('mailable_path'));
+            }
+        }
 
         // Output summary
         $this->outputSummary($dryRun, $withMailables, $skipTemplates);
@@ -150,7 +159,7 @@ class PullCommand extends Command
      *
      * @param  array<int, Template>  $templates
      */
-    protected function processTemplates(array $templates, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates, bool $force = false): void
+    protected function processTemplates(array $templates, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates): void
     {
         $label = $skipTemplates ? 'Processing templates' : 'Downloading templates';
         $progress = progress(
@@ -161,7 +170,7 @@ class PullCommand extends Command
         $progress->start();
 
         foreach ($templates as $template) {
-            $this->processTemplate($template, $dryRun, $withMailables, $asHtml, $skipTemplates, $force);
+            $this->processTemplate($template, $dryRun, $withMailables, $asHtml, $skipTemplates);
             $progress->advance();
         }
 
@@ -171,7 +180,7 @@ class PullCommand extends Command
     /**
      * Process a single template.
      */
-    protected function processTemplate(Template $template, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates, bool $force = false): void
+    protected function processTemplate(Template $template, bool $dryRun, bool $withMailables, bool $asHtml, bool $skipTemplates): void
     {
         // Fetch full template details to get the HTML
         $detail = $this->withRateLimitRetry(fn () => $this->lettr->templates()->get($template->slug));
@@ -185,15 +194,9 @@ class PullCommand extends Command
 
         // Save template file (HTML or Blade) unless skipping
         if (! $skipTemplates) {
-            if ($asHtml) {
-                $templatePath = $this->saveHtml($detail, $dryRun);
-            } else {
-                $templatePath = $this->saveBlade($detail, $dryRun);
-            }
-
             $this->downloadedTemplates[] = [
                 'slug' => $detail->slug,
-                'path' => $templatePath,
+                ...($asHtml ? $this->saveHtml($detail, $dryRun) : $this->saveBlade($detail, $dryRun)),
             ];
         }
 
@@ -213,11 +216,7 @@ class PullCommand extends Command
             // Generate Mailable with DTO integration
             // Use API template slug mode when skipping templates or --as-html
             $useBlade = ! $skipTemplates && ! $asHtml;
-            $mailable = $this->generateMailable($detail, $mergeTags, $dryRun, $useBlade, $force);
-
-            if ($mailable !== null) {
-                $this->generatedMailables[] = $mailable;
-            }
+            $this->generatedMailables[] = $this->generateMailable($detail, $mergeTags, $dryRun, $useBlade);
         }
     }
 
@@ -239,31 +238,37 @@ class PullCommand extends Command
 
     /**
      * Save the template as an HTML file.
+     *
+     * @return array{path: string, overwritten: bool}
      */
-    protected function saveHtml(TemplateDetail $template, bool $dryRun): string
+    protected function saveHtml(TemplateDetail $template, bool $dryRun): array
     {
-        $htmlPath = config('lettr.templates.html_path');
+        $htmlPath = TemplatesConfig::path('html_path');
         $filename = $template->slug.'.html';
         $fullPath = $htmlPath.'/'.$filename;
         $relativePath = str_replace(base_path().'/', '', $fullPath);
+        $overwritten = $this->files->exists($fullPath);
 
         if (! $dryRun) {
             $this->ensureDirectoryExists($htmlPath);
             $this->files->put($fullPath, (string) $template->html);
         }
 
-        return $relativePath;
+        return ['path' => $relativePath, 'overwritten' => $overwritten];
     }
 
     /**
      * Save the template as a Blade file.
+     *
+     * @return array{path: string, overwritten: bool}
      */
-    protected function saveBlade(TemplateDetail $template, bool $dryRun): string
+    protected function saveBlade(TemplateDetail $template, bool $dryRun): array
     {
-        $bladePath = config('lettr.templates.blade_path');
+        $bladePath = TemplatesConfig::path('blade_path');
         $filename = $template->slug.'.blade.php';
         $fullPath = $bladePath.'/'.$filename;
         $relativePath = str_replace(base_path().'/', '', $fullPath);
+        $overwritten = $this->files->exists($fullPath);
 
         if (! $dryRun) {
             $this->ensureDirectoryExists($bladePath);
@@ -271,22 +276,19 @@ class PullCommand extends Command
             $this->files->put($fullPath, $bladeContent);
         }
 
-        return $relativePath;
+        return ['path' => $relativePath, 'overwritten' => $overwritten];
     }
 
     /**
      * Generate a Mailable class for the template.
      *
-     * A Mailable is meant to be edited, so one that already exists is left
-     * alone unless --force is given; null is returned when it was skipped.
-     *
      * @param  array<int, MergeTag>  $mergeTags
-     * @return array{class: string, path: string}|null
+     * @return array{class: string, path: string, overwritten: bool}
      */
-    protected function generateMailable(TemplateDetail $template, array $mergeTags, bool $dryRun, bool $useBlade = true, bool $force = false): ?array
+    protected function generateMailable(TemplateDetail $template, array $mergeTags, bool $dryRun, bool $useBlade = true): array
     {
-        $mailablePath = config('lettr.templates.mailable_path');
-        $namespace = config('lettr.templates.mailable_namespace');
+        $mailablePath = TemplatesConfig::path('mailable_path');
+        $namespace = TemplatesConfig::namespace('mailable_namespace');
 
         $className = $this->slugToClassName($template->slug);
         $filename = $className.'.php';
@@ -294,14 +296,7 @@ class PullCommand extends Command
         $relativePath = str_replace(base_path().'/', '', $fullPath);
         $fullyQualifiedClass = $namespace.'\\'.$className;
 
-        if (! $force && $this->files->exists($fullPath)) {
-            $this->skippedMailables[] = [
-                'class' => $fullyQualifiedClass,
-                'path' => $relativePath,
-            ];
-
-            return null;
-        }
+        $overwritten = $this->files->exists($fullPath);
 
         if (! $dryRun) {
             $this->ensureDirectoryExists($mailablePath);
@@ -314,6 +309,7 @@ class PullCommand extends Command
         return [
             'class' => $fullyQualifiedClass,
             'path' => $relativePath,
+            'overwritten' => $overwritten,
         ];
     }
 
@@ -339,7 +335,7 @@ class PullCommand extends Command
         $withMergeTagsMethod = $hasMergeTags ? $this->generateWithMergeTagsMethod() : '';
 
         // Generate HTML path relative to base path
-        $htmlBasePath = config('lettr.templates.html_path');
+        $htmlBasePath = TemplatesConfig::path('html_path');
         $htmlPath = str_replace(base_path().'/', '', $htmlBasePath).'/'.$template->slug.'.html';
 
         return str_replace(
@@ -440,7 +436,7 @@ PHP;
      */
     protected function bladeViewName(string $slug): string
     {
-        $bladePath = rtrim((string) config('lettr.templates.blade_path'), '/');
+        $bladePath = TemplatesConfig::path('blade_path');
 
         $finder = app('view')->getFinder();
         $viewPaths = $finder instanceof FileViewFinder ? $finder->getPaths() : [resource_path('views')];
@@ -463,6 +459,16 @@ PHP;
         }
 
         return 'emails.lettr.'.$slug;
+    }
+
+    /**
+     * Warn when a generated class won't load under the app's PSR-4 mapping.
+     */
+    protected function warnIfNotAutoloadable(string $class, string $directory): void
+    {
+        if (($warning = AutoloadCheck::warning($class, $directory.'/'.class_basename($class).'.php')) !== null) {
+            $this->components->warn($warning);
+        }
     }
 
     /**
@@ -496,7 +502,7 @@ PHP;
 
             foreach ($this->downloadedTemplates as $template) {
                 $this->components->twoColumnDetail(
-                    "  <fg=green>✓</> {$template['slug']}",
+                    "  {$this->writeMarker($template['overwritten'])} {$template['slug']}",
                     $template['path']
                 );
             }
@@ -509,7 +515,7 @@ PHP;
 
             foreach ($this->generatedDtos as $dto) {
                 $this->components->twoColumnDetail(
-                    "  <fg=green>✓</> {$dto['class']}",
+                    "  {$this->writeMarker($dto['overwritten'])} {$dto['class']}",
                     $dto['path']
                 );
             }
@@ -522,19 +528,7 @@ PHP;
 
             foreach ($this->generatedMailables as $mailable) {
                 $this->components->twoColumnDetail(
-                    "  <fg=green>✓</> {$mailable['class']}",
-                    ''
-                );
-            }
-        }
-
-        if ($withMailables && ! empty($this->skippedMailables)) {
-            $this->newLine();
-            $this->components->twoColumnDetail('<fg=gray>Skipped (Mailable already exists, use --force to overwrite):</>');
-
-            foreach ($this->skippedMailables as $mailable) {
-                $this->components->twoColumnDetail(
-                    "  <fg=yellow>⊘</> {$mailable['class']}",
+                    "  {$this->writeMarker($mailable['overwritten'])} {$mailable['class']}",
                     $mailable['path']
                 );
             }
@@ -553,6 +547,11 @@ PHP;
         }
 
         $this->newLine();
+
+        $this->warnAboutOverwrites(
+            count(array_filter([...$this->downloadedTemplates, ...$this->generatedDtos, ...$this->generatedMailables], fn (array $file): bool => $file['overwritten'])),
+            $dryRun,
+        );
 
         if ($skipTemplates) {
             $mailableCount = count($this->generatedMailables);

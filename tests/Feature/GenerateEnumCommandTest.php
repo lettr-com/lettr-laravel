@@ -38,6 +38,7 @@ function createEnumListResponse(array $templates): ListTemplatesResponse
 
 beforeEach(function () {
     $this->filesystem = Mockery::mock(Filesystem::class);
+    $this->filesystem->shouldReceive('exists')->andReturn(false)->byDefault();
     $this->lettrManager = Mockery::mock(LettrManager::class);
     $this->templateService = Mockery::mock(TemplateServiceWrapper::class);
 

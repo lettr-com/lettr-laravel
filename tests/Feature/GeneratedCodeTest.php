@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Str;
 use Lettr\Collections\TemplateCollection;
@@ -10,6 +11,7 @@ use Lettr\Dto\Template\TemplateDetail;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Services\TemplateServiceWrapper;
 use Lettr\Laravel\Support\SparkpostToBladeConverter;
+use Lettr\Laravel\Support\TemplatesConfig;
 use Lettr\Responses\GetMergeTagsResponse;
 use Lettr\Responses\ListTemplatesResponse;
 use Lettr\Responses\TemplatePagination;
@@ -261,7 +263,7 @@ describe('lettr:pull', function () {
         $this->artisan('lettr:pull', ['--with-mailables' => true])->assertSuccessful();
         $blade = file_get_contents($this->root.'/Mail/DontMissOut.php');
 
-        $this->artisan('lettr:pull', ['--with-mailables' => true, '--as-html' => true, '--force' => true])->assertSuccessful();
+        $this->artisan('lettr:pull', ['--with-mailables' => true, '--as-html' => true])->assertSuccessful();
         $api = file_get_contents($this->root.'/Mail/DontMissOut.php');
 
         expect($blade)->toContain("subject: 'Don\\'t Miss Out',")
@@ -280,26 +282,94 @@ describe('lettr:pull', function () {
             ->toContain("protected ?string \$bladeView = 'mail.welcome';");
     });
 
-    it('leaves an existing Mailable alone unless --force is given', function () {
-        serveTemplates($this, ['welcome' => []]);
+    it('overwrites existing files and warns', function () {
+        serveTemplates($this, ['welcome' => ['tags' => [new MergeTag(key: 'name', required: true)]]]);
         mkdir($this->root.'/Mail', 0755, true);
         file_put_contents($this->root.'/Mail/Welcome.php', '<?php // edited');
 
-        $this->artisan('lettr:pull', ['--with-mailables' => true])
+        $this->artisan('lettr:pull', ['--with-mailables' => true, '--dry-run' => true])
             ->assertSuccessful()
-            ->expectsOutputToContain('Mailable already exists');
+            ->expectsOutputToContain('1 existing file(s) would be overwritten');
 
         expect(file_get_contents($this->root.'/Mail/Welcome.php'))->toBe('<?php // edited');
 
-        $this->artisan('lettr:pull', ['--with-mailables' => true, '--force' => true])->assertSuccessful();
+        $this->artisan('lettr:pull', ['--with-mailables' => true])
+            ->assertSuccessful()
+            ->expectsOutputToContain('1 existing file(s) were overwritten');
 
         expect(file_get_contents($this->root.'/Mail/Welcome.php'))->toContain('class Welcome extends LettrMailable');
+
+        // Second run: the Blade view, DTO and Mailable all exist now
+        $this->artisan('lettr:pull', ['--with-mailables' => true])
+            ->assertSuccessful()
+            ->expectsOutputToContain('3 existing file(s) were overwritten');
+
+        $this->artisan('lettr:generate-dtos')->expectsOutputToContain('1 existing file(s) were overwritten');
+        $this->artisan('lettr:generate-enum')->assertSuccessful()->doesntExpectOutputToContain('overwritten');
+        $this->artisan('lettr:generate-enum')->expectsOutputToContain('1 existing file(s) were overwritten');
     });
 
     it('fails when --template does not exist', function () {
         serveTemplates($this, ['welcome' => []]);
 
         $this->artisan('lettr:pull', ['--template' => 'missing'])->assertFailed();
+    });
+});
+
+it('reports only the current run when the command runs twice in one process', function () {
+    serveTemplates($this, ['welcome' => []]);
+
+    Artisan::call('lettr:pull', ['--dry-run' => true]);
+    Artisan::call('lettr:pull', ['--dry-run' => true]);
+
+    expect(Artisan::output())->toContain('Would download 1 template(s)');
+});
+
+it('warns when a generated class will not autoload', function () {
+    config()->set('lettr.templates.dto_path', $this->root.'/Dto');
+    config()->set('lettr.templates.dto_namespace', 'NotMapped\\Dto');
+    serveTemplates($this, ['welcome' => ['tags' => [new MergeTag(key: 'name', required: true)]]]);
+
+    $this->artisan('lettr:generate-dtos')
+        ->assertSuccessful()
+        ->expectsOutputToContain("NotMapped\\Dto\\WelcomeData won't autoload");
+});
+
+it('renders nothing for a pulled loop whose optional merge tag was left out', function () {
+    $blade = (new SparkpostToBladeConverter)->convert('<ul>{{#each items}}<li>{{this.name}}</li>{{/each}}</ul>');
+
+    expect(Blade::render($blade, ['items' => null]))->toBe('<ul></ul>');
+});
+
+describe('lettr.templates config', function () {
+    it('falls back to package defaults for keys a published config left out', function () {
+        config()->set('lettr.templates', ['mailable_namespace' => 'App\\Mail\\Lettr']);
+
+        expect(TemplatesConfig::path('enum_path'))->toBe(app_path('Enums'))
+            ->and(TemplatesConfig::namespace('dto_namespace'))->toBe('App\\Dto\\Lettr')
+            ->and(TemplatesConfig::enumClass())->toBe('LettrTemplate');
+    });
+
+    it('resolves relative paths against base_path and trims slashes', function () {
+        config()->set('lettr.templates.dto_path', 'app/Dto/Lettr/');
+        config()->set('lettr.templates.dto_namespace', '\\App\\Dto\\Lettr\\');
+
+        expect(TemplatesConfig::path('dto_path'))->toBe(base_path('app/Dto/Lettr'))
+            ->and(TemplatesConfig::namespace('dto_namespace'))->toBe('App\\Dto\\Lettr');
+    });
+
+    it('generates loadable code from namespaces with stray backslashes', function () {
+        config()->set('lettr.templates.enum_namespace', '\\'.$this->namespace.'\\Enums\\');
+        config()->set('lettr.templates.dto_namespace', $this->namespace.'\\Dto\\');
+        config()->set('lettr.templates.mailable_namespace', '\\'.$this->namespace.'\\Mail');
+        config()->set('lettr.templates.mailable_path', $this->root.'/Mail/');
+        serveTemplates($this, ['welcome' => ['tags' => [new MergeTag(key: 'name', required: true)]]]);
+
+        $this->artisan('lettr:generate-enum')->assertSuccessful();
+        $this->artisan('lettr:pull', ['--with-mailables' => true, '--as-html' => true])->assertSuccessful();
+
+        expect(file_get_contents($this->root.'/Mail/Welcome.php'))->toContain("use {$this->namespace}\\Dto\\WelcomeData;")
+            ->and(generatedLoadError($this->root))->toBeNull();
     });
 });
 

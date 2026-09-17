@@ -7,14 +7,18 @@ namespace Lettr\Laravel\Console;
 use Illuminate\Console\Command;
 use Lettr\Dto\Template\Template;
 use Lettr\Laravel\Concerns\FetchesAllTemplates;
+use Lettr\Laravel\Concerns\WarnsAboutOverwrites;
 use Lettr\Laravel\LettrManager;
+use Lettr\Laravel\Support\AutoloadCheck;
 use Lettr\Laravel\Support\DtoGenerator;
+use Lettr\Laravel\Support\TemplatesConfig;
 
 use function Laravel\Prompts\progress;
 
 class GenerateDtosCommand extends Command
 {
     use FetchesAllTemplates;
+    use WarnsAboutOverwrites;
 
     /**
      * The name and signature of the console command.
@@ -33,7 +37,7 @@ class GenerateDtosCommand extends Command
     protected $description = 'Generate type-safe DTO classes from Lettr template merge tags';
 
     /**
-     * @var array<int, array{class: string, path: string}>
+     * @var array<int, array{class: string, path: string, overwritten: bool}>
      */
     protected array $generatedDtos = [];
 
@@ -54,6 +58,9 @@ class GenerateDtosCommand extends Command
      */
     public function handle(): int
     {
+        // Artisan reuses the command instance within a process, so start each run clean
+        $this->generatedDtos = $this->skippedTemplates = [];
+
         $this->components->info('Generating DTOs from Lettr template merge tags...');
 
         /** @var string|null $templateSlug */
@@ -75,6 +82,10 @@ class GenerateDtosCommand extends Command
 
         // Process templates with progress bar
         $this->processTemplates($templates, $dryRun);
+
+        if (! $dryRun && isset($this->generatedDtos[0])) {
+            $this->warnIfNotAutoloadable($this->generatedDtos[0]);
+        }
 
         // Output summary
         $this->outputSummary($dryRun);
@@ -162,6 +173,20 @@ class GenerateDtosCommand extends Command
     }
 
     /**
+     * Warn when a generated class won't load under the app's PSR-4 mapping.
+     *
+     * @param  array{class: string, path: string}  $generated
+     */
+    protected function warnIfNotAutoloadable(array $generated): void
+    {
+        $file = TemplatesConfig::path('dto_path').'/'.class_basename($generated['class']).'.php';
+
+        if (($warning = AutoloadCheck::warning($generated['class'], $file)) !== null) {
+            $this->components->warn($warning);
+        }
+    }
+
+    /**
      * Output the summary of generated DTOs.
      */
     protected function outputSummary(bool $dryRun): void
@@ -173,7 +198,7 @@ class GenerateDtosCommand extends Command
 
         foreach ($this->generatedDtos as $dto) {
             $this->components->twoColumnDetail(
-                "  <fg=green>✓</> {$dto['class']}",
+                "  {$this->writeMarker($dto['overwritten'])} {$dto['class']}",
                 $dto['path']
             );
         }
@@ -191,6 +216,8 @@ class GenerateDtosCommand extends Command
         }
 
         $this->newLine();
+
+        $this->warnAboutOverwrites(count(array_filter($this->generatedDtos, fn (array $dto): bool => $dto['overwritten'])), $dryRun);
 
         $count = count($this->generatedDtos);
         $action = $dryRun ? 'Would generate' : 'Generated';

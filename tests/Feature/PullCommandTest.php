@@ -58,6 +58,7 @@ function createListResponse(array $templates): ListTemplatesResponse
 
 beforeEach(function () {
     $this->filesystem = Mockery::mock(Filesystem::class);
+    $this->filesystem->shouldReceive('exists')->andReturn(false)->byDefault();
     $this->lettrManager = Mockery::mock(LettrManager::class);
     $this->templateService = Mockery::mock(TemplateServiceWrapper::class);
 
@@ -287,7 +288,6 @@ it('generates mailable classes when with-mailables option is provided', function
         ));
 
     $this->filesystem->shouldReceive('isDirectory')->andReturn(true);
-    $this->filesystem->shouldReceive('exists')->andReturn(false);
 
     // Should write blade, DTO, and mailable
     $this->filesystem->shouldReceive('put')->times(3);

@@ -12,6 +12,7 @@ use Lettr\Dto\Template\CreateTemplateData;
 use Lettr\Laravel\Concerns\ThrottlesApiRequests;
 use Lettr\Laravel\LettrManager;
 use Lettr\Laravel\Support\BladeToSparkpostConverter;
+use Lettr\Laravel\Support\TemplatesConfig;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\progress;
@@ -66,6 +67,9 @@ class PushCommand extends Command
      */
     public function handle(): int
     {
+        // Artisan reuses the command instance within a process, so start each run clean
+        $this->createdTemplates = $this->pendingTemplates = $this->skippedTemplates = [];
+
         $this->components->info('Pushing templates to Lettr...');
 
         $dryRun = (bool) $this->option('dry-run');
@@ -112,14 +116,16 @@ class PushCommand extends Command
         $pathOption = $this->option('path');
 
         if ($pathOption !== null) {
-            return $pathOption;
+            return TemplatesConfig::absolutePath($pathOption);
         }
 
-        $basePath = resource_path('views');
-        $candidates = ['emails', 'mails', 'email', 'mail'];
+        // Where lettr:pull writes Blade views comes first, then the usual email folders
+        $candidates = array_unique([
+            TemplatesConfig::path('blade_path'),
+            ...array_map(fn (string $folder): string => resource_path('views/'.$folder), ['emails', 'mails', 'email', 'mail']),
+        ]);
 
-        foreach ($candidates as $folder) {
-            $path = $basePath.'/'.$folder;
+        foreach ($candidates as $path) {
             if ($this->files->isDirectory($path)) {
                 if (confirm("Found email templates at {$path}. Use this folder?", default: true)) {
                     return $path;
@@ -136,12 +142,7 @@ class PushCommand extends Command
             return null;
         }
 
-        // Handle relative paths
-        if (! str_starts_with($customPath, '/')) {
-            return base_path($customPath);
-        }
-
-        return $customPath;
+        return TemplatesConfig::absolutePath($customPath);
     }
 
     /**

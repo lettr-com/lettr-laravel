@@ -7,6 +7,7 @@ use Lettr\Laravel\Support\DtoGenerator;
 
 beforeEach(function () {
     $this->filesystem = Mockery::mock(Filesystem::class);
+    $this->filesystem->shouldReceive('exists')->andReturn(false)->byDefault();
     $this->generator = new DtoGenerator($this->filesystem);
 
     config()->set('lettr.templates.dto_path', base_path('app/Dto/Lettr'));
