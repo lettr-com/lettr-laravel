@@ -56,6 +56,16 @@ abstract class LettrMailable extends Mailable
     protected ?string $scheduledAt = null;
 
     /**
+     * A caller-supplied idempotency key, used instead of the generated one.
+     */
+    protected ?string $idempotencyKey = null;
+
+    /**
+     * Whether this send should carry no idempotency key at all.
+     */
+    protected bool $withoutIdempotency = false;
+
+    /**
      * Set the template slug.
      */
     public function template(string $slug, ?int $version = null, ?int $projectId = null): static
@@ -119,6 +129,39 @@ abstract class LettrMailable extends Mailable
         $this->scheduledAt = $when instanceof DateTimeInterface
             ? $when->format(DateTimeInterface::ATOM)
             : $when;
+
+        return $this;
+    }
+
+    /**
+     * Send this email under a specific idempotency key.
+     *
+     * Use when you have a natural id for the send - an order or invoice number -
+     * that is more meaningful than the generated one. The key must be stable
+     * across retries of the same logical send, and must differ between sends
+     * you want to happen separately.
+     *
+     * 1-255 characters of letters, digits, periods, underscores or hyphens.
+     */
+    public function idempotencyKey(string $key): static
+    {
+        $this->idempotencyKey = $key;
+        $this->withoutIdempotency = false;
+
+        return $this;
+    }
+
+    /**
+     * Send this email with no idempotency key.
+     *
+     * For a deliberate resend: the same email, on purpose, again. Without this
+     * a queued resend of an identical payload from the same job would come back
+     * as a replay and never leave.
+     */
+    public function withoutIdempotency(): static
+    {
+        $this->withoutIdempotency = true;
+        $this->idempotencyKey = null;
 
         return $this;
     }
@@ -234,6 +277,12 @@ abstract class LettrMailable extends Mailable
 
             if ($this->scheduledAt !== null) {
                 $message->getHeaders()->addTextHeader('X-Lettr-Scheduled-At', $this->scheduledAt);
+            }
+
+            if ($this->withoutIdempotency) {
+                $message->getHeaders()->addTextHeader('X-Lettr-Idempotency', 'disabled');
+            } elseif ($this->idempotencyKey !== null) {
+                $message->getHeaders()->addTextHeader('X-Lettr-Idempotency-Key', $this->idempotencyKey);
             }
 
             // Add custom headers

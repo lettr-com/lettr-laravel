@@ -1,154 +1,140 @@
 # Lettr Laravel Package Structure
 
-This document describes the structure of the `lettr/lettr-laravel` package.
+This document describes the internals of the `lettr/lettr-laravel` package, for people working **on** the package. If you are working **with** it, read the [README](README.md) and [docs.lettr.com/quickstart/laravel](https://docs.lettr.com/quickstart/laravel/introduction) instead.
 
 ## Package Overview
 
-This is a Laravel wrapper package for the `lettr/lettr-php` SDK that provides:
-- Laravel Mail driver integration
-- Facade for easy access to the Lettr API
-- Service provider for automatic registration
-- Configuration file for API key management
+This is a Laravel integration for the [`lettr/lettr-php`](https://github.com/lettr-com/lettr-php) SDK. It provides:
+
+- A Laravel Mail driver (`MAIL_MAILER=lettr`), so Mailables and `Mail::to()` send through Lettr
+- A `Lettr` facade that exposes the SDK's services, resolved lazily from the container
+- `Mail::lettr()` for sending a Lettr template inline, without writing a Mailable
+- `LettrMailable` / `InlineLettrMailable` base classes for template-backed mail
+- Artisan commands for syncing templates and generating typed Blade, DTO and enum artifacts
+- A config file and service provider handling API key resolution and auto-discovery
+
+The SDK does the HTTP work. This package owns the Laravel-shaped surface around it, and deliberately keeps a thin pass-through where Laravel adds nothing — `Lettr::audience()` and `Lettr::campaigns()`, for example, return the SDK's own services.
 
 ## Directory Structure
 
 ```
 lettr-laravel/
 ├── config/
-│   └── lettr.php                    # Configuration file
+│   └── lettr.php                          # Published config: API key + template paths
 ├── src/
+│   ├── Concerns/
+│   │   ├── DisplayHelper.php              # Shared console output formatting
+│   │   └── ThrottlesApiRequests.php       # Retry-After aware rate-limit retry for commands
+│   ├── Console/
+│   │   ├── Enums/
+│   │   │   └── Theme.php                  # Console colour theme
+│   │   ├── CheckCommand.php               # lettr:check
+│   │   ├── GenerateDtosCommand.php        # lettr:generate-dtos
+│   │   ├── GenerateEnumCommand.php        # lettr:generate-enum
+│   │   ├── InitCommand.php                # lettr:init
+│   │   ├── PullCommand.php                # lettr:pull
+│   │   └── PushCommand.php                # lettr:push
 │   ├── Exceptions/
-│   │   └── ApiKeyIsMissing.php      # Exception for missing API key
+│   │   └── ApiKeyIsMissing.php            # Thrown when no API key is configured
 │   ├── Facades/
-│   │   └── Lettr.php                # Facade for Lettr client
+│   │   └── Lettr.php                      # Facade over LettrManager
+│   ├── Mail/
+│   │   ├── InlineLettrMailable.php        # Mailable built by Mail::lettr()
+│   │   ├── LettrMailable.php              # Base class for template-backed Mailables
+│   │   └── LettrPendingMail.php           # Fluent chain behind Mail::lettr()
+│   ├── Services/
+│   │   └── TemplateServiceWrapper.php     # Laravel-flavoured wrapper over the SDK templates service
+│   ├── Support/
+│   │   ├── BladeToSparkpostConverter.php  # Blade -> SparkPost syntax (push)
+│   │   ├── DtoGenerator.php               # Merge tags -> typed DTO classes
+│   │   ├── MailerMixin.php                # Registers the Mail::lettr() macro
+│   │   └── SparkpostToBladeConverter.php  # SparkPost -> Blade syntax (pull)
 │   ├── Transport/
-│   │   └── LettrTransportFactory.php # Symfony Mailer transport
-│   └── LettrServiceProvider.php     # Laravel service provider
+│   │   └── LettrTransportFactory.php      # Symfony Mailer transport
+│   ├── LettrManager.php                   # Lazily resolves the SDK and exposes its services
+│   └── LettrServiceProvider.php           # Registration, publishing, mail driver, VERSION
+├── stubs/                                 # Templates for generated Mailables, DTOs and enums
 ├── tests/
-│   ├── Unit/
-│   │   ├── LettrServiceProviderTest.php
-│   │   └── LettrTransportTest.php
-│   ├── Pest.php                     # Pest configuration
-│   └── TestCase.php                 # Base test case
-├── .editorconfig
-├── .gitattributes
-├── .gitignore
+│   ├── Feature/                           # Console commands + README example tests
+│   ├── Unit/                              # Manager, transport, mail, converters, SDK surface
+│   ├── Pest.php
+│   └── TestCase.php
+├── .github/workflows/                     # ci.yml (PR checks), release.yml (tag -> release)
 ├── composer.json
-├── LICENSE
-├── phpstan.neon                     # PHPStan configuration
-├── phpunit.xml                      # PHPUnit configuration
-├── pint.json                        # Laravel Pint configuration
+├── phpstan.neon                           # Larastan, level 8
+├── phpunit.xml
+├── pint.json
 └── README.md
 ```
 
 ## Key Components
 
 ### Service Provider (`src/LettrServiceProvider.php`)
-- Registers the Lettr client as a singleton in the container
-- Extends Laravel's Mail system with the 'lettr' transport
-- Publishes configuration file
-- Handles API key configuration from `.env` or config files
+
+- Holds `VERSION`, which is sent as the `lettr-laravel/<version>` User-Agent suffix — bump it on every release
+- Registers `LettrManager` as the `lettr` singleton, resolving the API key from `config('lettr.api_key')` with `config('services.lettr.key')` as a fallback, and throwing `ApiKeyIsMissing` when neither is set
+- Extends Laravel's Mail system with the `lettr` transport
+- Registers the `Mail::lettr()` macro and the six Artisan commands
+- Publishes `config/lettr.php`
+
+### Manager (`src/LettrManager.php`)
+
+Resolves the SDK lazily — nothing hits the network until a service is actually used. Exposes `emails()`, `domains()`, `projects()`, `webhooks()`, `health()`, `audience()`, `campaigns()` and `templates()`, each also reachable as a magic property (`app('lettr')->audience`). All but `templates()` return the SDK's own service; `sdk()` returns the underlying client for anything not wrapped.
 
 ### Mail Transport (`src/Transport/LettrTransportFactory.php`)
-- Implements Symfony Mailer's `AbstractTransport`
-- Converts Symfony Email objects to Lettr's `SendEmailData` DTO
-- Sends emails using the Lettr API
-- Only implements the `send()` method as requested
 
-### Facade (`src/Facades/Lettr.php`)
-- Provides static access to the Lettr client
-- Type-hinted for IDE support
+Implements Symfony Mailer's `AbstractTransport`. Converts a Symfony `Email` into the SDK's `SendEmailData`, carrying template slug/version and substitution data across via `X-Lettr-*` headers, and rethrows SDK failures as `TransportException`.
 
-### Configuration (`config/lettr.php`)
-- Simple configuration file with API key setting
-- Reads from `LETTR_API_KEY` environment variable
+### Console Commands (`src/Console/`)
 
-## Usage
-
-### Installation
-
-```bash
-composer require lettr/lettr-laravel
-```
-
-### Configuration
-
-Add to `.env`:
-```
-LETTR_API_KEY=your-api-key
-```
-
-### Using as Mail Driver
-
-In `config/mail.php`:
-```php
-'lettr' => [
-    'transport' => 'lettr',
-],
-```
-
-In `.env`:
-```
-MAIL_MAILER=lettr
-```
-
-Then use Laravel's Mail facade:
-```php
-Mail::to('user@example.com')->send(new WelcomeEmail());
-```
-
-### Using the Facade
-
-```php
-use Lettr\Laravel\Facades\Lettr;
-use Lettr\Dto\SendEmailData;
-
-$email = new SendEmailData(
-    from: 'sender@example.com',
-    to: ['recipient@example.com'],
-    subject: 'Hello',
-    text: 'Plain text',
-    html: '<p>HTML</p>',
-);
-
-$response = Lettr::emails()->send($email);
-```
+`lettr:init` scaffolds config and directories, `lettr:check` verifies the integration end to end, `lettr:pull` / `lettr:push` sync templates (converting between Blade and SparkPost syntax), and `lettr:generate-enum` / `lettr:generate-dtos` produce typed artifacts from template merge tags.
 
 ## Development
 
-### Running Tests
 ```bash
-composer test
+composer install
+composer test      # Pest
+composer lint      # Pint (append -- --test to check without fixing)
+composer analyse   # PHPStan via Larastan, level 8
 ```
 
-### Code Style
-```bash
-composer lint
-```
+CI runs all three across the supported PHP and Laravel matrix on every PR. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [VERSIONING.md](VERSIONING.md) for the release process.
 
-### Static Analysis
-```bash
-composer analyse
-```
+### Test Layout
+
+| File | Covers |
+| :--- | :--- |
+| `Unit/LettrServiceProviderTest.php` | Registration, API key resolution, User-Agent |
+| `Unit/LettrTransportTest.php` | Symfony `Email` -> `SendEmailData` conversion |
+| `Unit/LettrPendingMailTest.php` | The `Mail::lettr()` chain |
+| `Unit/AudienceServiceTest.php` | Audience service resolution + bulk contact surface |
+| `Unit/CampaignServiceTest.php` | Campaign service resolution |
+| `Unit/SdkSurfaceTest.php` | SDK builders, filters, DTOs and enums exposed via the facade |
+| `Unit/DtoGeneratorTest.php`, `Unit/*ConverterTest.php` | Code generation and Blade/SparkPost conversion |
+| `Feature/*CommandTest.php` | Each Artisan command |
+| `Feature/ReadmeDocTest.php` | Every code example currently in the README |
+
+`ReadmeDocTest.php` is generated by the readme-doc-test skill and must track the README exactly — if an example is removed from the README, its test moves to `SdkSurfaceTest.php` rather than staying behind.
 
 ## Dependencies
 
-### Production
-- PHP ^8.4
-- Laravel ^10.0|^11.0|^12.0
-- lettr/lettr-php:dev-main
-- symfony/mailer ^6.2|^7.0
+### Runtime
+
+| Package | Constraint |
+| :--- | :--- |
+| `php` | `^8.4` |
+| `lettr/lettr-php` | `^2.5.0` |
+| `illuminate/http`, `illuminate/support` | `^10.0 \| ^11.0 \| ^12.0 \| ^13.0` |
+| `symfony/mailer` | `^6.2 \| ^7.0 \| ^8.0` |
 
 ### Development
-- laravel/pint ^1.18
-- larastan/larastan ^2.0|^3.0
-- pestphp/pest ^2.0|^3.7
-- orchestra/testbench ^8.17|^9.0|^10.8
+
+`laravel/pint ^1.18` · `larastan/larastan ^2.0|^3.0` · `mockery/mockery ^1.5` · `orchestra/testbench ^8.17|^9.0|^10.8|^11.0` · `pestphp/pest ^2.0|^3.7`
+
+Constraints drift — `composer.json` is the source of truth if this table disagrees with it.
 
 ## Notes
 
-- The package only implements the `send()` method from lettr-php as requested
-- Follows the same pattern as resend-laravel for consistency
-- Uses Pint, Larastan, and Pest as specified
-- Auto-discovery is enabled via composer.json extra section
-
+- Auto-discovery registers the provider and the `Lettr` facade alias via the `extra.laravel` block in `composer.json`
+- `composer.lock` is intentionally gitignored; this is a library, so CI resolves dependencies fresh
+- `.ide.php` exists only to give IDEs the `Mail::lettr()` macro signature and is never loaded at runtime

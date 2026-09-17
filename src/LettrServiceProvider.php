@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Lettr\Laravel;
 
 use Illuminate\Mail\Mailer;
+use Illuminate\Queue\Events\JobFailed;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ServiceProvider;
 use Lettr\Laravel\Console\CheckCommand;
@@ -15,6 +19,8 @@ use Lettr\Laravel\Console\PullCommand;
 use Lettr\Laravel\Console\PushCommand;
 use Lettr\Laravel\Exceptions\ApiKeyIsMissing;
 use Lettr\Laravel\Mail\LettrPendingMail;
+use Lettr\Laravel\Support\CurrentQueueJob;
+use Lettr\Laravel\Support\IdempotencyKeyGenerator;
 use Lettr\Laravel\Transport\LettrTransportFactory;
 use Lettr\Lettr;
 
@@ -23,7 +29,7 @@ class LettrServiceProvider extends ServiceProvider
     /**
      * The package version.
      */
-    public const VERSION = '2.3.0';
+    public const VERSION = '2.6.0';
 
     /**
      * Bootstrap any application services.
@@ -32,12 +38,18 @@ class LettrServiceProvider extends ServiceProvider
     {
         $this->registerPublishing();
         $this->registerCommands();
+        $this->trackCurrentQueueJob();
 
         Mail::extend('lettr', function (array $config = []): LettrTransportFactory {
             /** @var LettrManager $manager */
             $manager = $this->app->make('lettr');
 
-            return new LettrTransportFactory($manager->sdk(), $config['options'] ?? []);
+            return new LettrTransportFactory(
+                $manager->sdk(),
+                $config['options'] ?? [],
+                $this->app->make(IdempotencyKeyGenerator::class),
+                (bool) config('lettr.idempotency.enabled', true),
+            );
         });
 
         Mailer::macro('lettr', function (): LettrPendingMail {
@@ -63,6 +75,10 @@ class LettrServiceProvider extends ServiceProvider
     {
         $this->configure();
         $this->bindLettrClient();
+
+        // Scoped, and cleared on the job lifecycle events - a worker is one long
+        // process, so a singleton here would carry a uuid between jobs.
+        $this->app->scoped(CurrentQueueJob::class);
     }
 
     /**
@@ -100,6 +116,27 @@ class LettrServiceProvider extends ServiceProvider
         });
 
         $this->app->alias('lettr', LettrManager::class);
+    }
+
+    /**
+     * Remember which queue job is running, so a send inside it can be made
+     * idempotent.
+     *
+     * Bracketed by the job lifecycle rather than left to expire: a worker is a
+     * long-running process, and a stale uuid would key one job's send to the
+     * previous job's identity.
+     */
+    protected function trackCurrentQueueJob(): void
+    {
+        Event::listen(JobProcessing::class, function (JobProcessing $event): void {
+            $this->app->make(CurrentQueueJob::class)->set($event->job->uuid());
+        });
+
+        foreach ([JobProcessed::class, JobFailed::class] as $event) {
+            Event::listen($event, function (): void {
+                $this->app->make(CurrentQueueJob::class)->forget();
+            });
+        }
     }
 
     /**

@@ -11,6 +11,7 @@ use Lettr\Services\AudienceService;
 use Lettr\Services\CampaignService;
 use Lettr\Services\DomainService;
 use Lettr\Services\EmailService;
+use Lettr\Services\FolderService;
 use Lettr\Services\HealthService;
 use Lettr\Services\ProjectService;
 use Lettr\Services\WebhookService;
@@ -21,6 +22,7 @@ use Lettr\Services\WebhookService;
  * @property-read EmailService $emails
  * @property-read DomainService $domains
  * @property-read ProjectService $projects
+ * @property-read FolderService $folders
  * @property-read WebhookService $webhooks
  * @property-read AudienceService $audience
  * @property-read CampaignService $campaigns
@@ -73,6 +75,18 @@ class LettrManager
     public function projects(): ProjectService
     {
         return $this->lettr()->projects();
+    }
+
+    /**
+     * Get the folder service.
+     *
+     * Folders are where templates are filed. List them to pick a `folderId`
+     * for a `CreateTemplateData` instead of hardcoding one read out of an app
+     * URL.
+     */
+    public function folders(): FolderService
+    {
+        return $this->lettr()->folders();
     }
 
     /**
@@ -138,6 +152,7 @@ class LettrManager
             'emails' => $this->emails(),
             'domains' => $this->domains(),
             'projects' => $this->projects(),
+            'folders' => $this->folders(),
             'webhooks' => $this->webhooks(),
             'templates' => $this->templates(),
             'health' => $this->health(),

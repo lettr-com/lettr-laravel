@@ -377,10 +377,68 @@ class WelcomeEmail extends LettrMailable
 }
 ```
 
+## Idempotent Sends
+
+**Emails sent from inside a queue job are idempotent by default.** If a job is
+retried — the API accepted the send but the response timed out — the retry
+returns the original result instead of delivering a second email.
+
+Nothing to configure. The key is derived from the job's uuid plus a hash of the
+payload, so it is stable across retries of one send, different for every fresh
+dispatch, and different for each email a job sends in a loop.
+
+**Synchronous sends carry no key.** A retried HTTP request is a new process, so
+there is nothing stable to derive one from. Pass your own key for those:
+
+```php
+use Illuminate\Support\Facades\Mail;
+
+// Your own key — an order id is more meaningful than a generated hash
+Mail::lettr()->idempotencyKey('order-12345')->send(new OrderShipped($order));
+
+// A deliberate resend: send it again, on purpose
+Mail::lettr()->withoutIdempotency()->send(new OrderShipped($order));
+```
+
+`LettrMailable` has the same two methods, so a mailable can decide for itself:
+
+```php
+class OrderShipped extends LettrMailable
+{
+    public function build(): static
+    {
+        return parent::build()->idempotencyKey("order-{$this->order->id}-shipped");
+    }
+}
+```
+
+To turn the default off everywhere, in `config/lettr.php`:
+
+```php
+'idempotency' => [
+    'enabled' => env('LETTR_IDEMPOTENCY_ENABLED', false),
+],
+```
+
+An explicit key is still sent when the default is off — disabling the default is
+not the same as refusing a key you asked for.
+
+| | |
+| --- | --- |
+| Applies to | Queued sends by default; synchronous sends only with an explicit key |
+| Format | 1–255 characters, `[A-Za-z0-9._-]` |
+| Retention | 24 hours |
+| Scope | Per team **and** API key |
+| Scheduled sends | Not covered — a different endpoint that takes no key |
+
+A replay is a success, not an error. `$response->replayed` is true and no second
+email went out.
+
 ## Error Handling
 
 ```php
 use Lettr\Exceptions\ApiException;
+use Lettr\Exceptions\ContactAlreadyExistsException;
 use Lettr\Exceptions\TransporterException;
 use Lettr\Exceptions\ValidationException;
 use Lettr\Exceptions\NotFoundException;
@@ -390,6 +448,9 @@ use Lettr\Exceptions\QuotaExceededException;
 
 try {
     $response = Lettr::emails()->send($email);
+} catch (ContactAlreadyExistsException $e) {
+    // Duplicate contact (409) — client-correctable, never retry
+    Log::info("Contact already exists: " . $e->email);
 } catch (RateLimitException $e) {
     // Too many requests (429)
     Log::warning("Rate limited, retry after: " . $e->retryAfter . "s");
@@ -413,6 +474,10 @@ try {
     Log::error("Network error: " . $e->getMessage());
 }
 ```
+
+Every `ApiException` exposes the API's machine-readable code via `$e->errorCode()` (or the readonly `$e->errorCode`), or `null` when the API didn't send one. Catch order matters: `ContactAlreadyExistsException` extends `ConflictException`, which extends `ApiException`, so it must be caught before them.
+
+Creating a contact whose email is already in your audience throws `ContactAlreadyExistsException` (HTTP 409, `resource_already_exists`) carrying the colliding `$e->email`. **Don't retry it** — it's a client-correctable condition, not an outage. Update the existing contact with `update()`, or use `bulkCreate()` with `updateExisting: true`.
 
 ## Configuration
 
@@ -490,6 +555,27 @@ php artisan lettr:pull --dry-run
 | `--with-mailables` | Also generate Mailable and DTO classes |
 | `--skip-templates` | Skip downloading templates, only generate DTOs and Mailables |
 | `--dry-run` | Preview what would be downloaded |
+
+### `lettr:push`
+
+Upload local Blade email templates to your Lettr account, the reverse of `lettr:pull`:
+
+```bash
+php artisan lettr:push
+php artisan lettr:push --path=resources/views/emails
+php artisan lettr:push --template=welcome-email
+php artisan lettr:push --purpose=campaign
+php artisan lettr:push --dry-run
+```
+
+| Option | Description |
+|--------|-------------|
+| `--path=` | Custom path to the templates directory (auto-discovered otherwise) |
+| `--template=` | Push only a specific template by filename |
+| `--purpose=` | Module to create the templates in — `transactional` (default) or `campaign` |
+| `--dry-run` | Preview what would be created without pushing |
+
+Blade syntax is converted to Sparkpost syntax on the way up. Without `--purpose` no module is sent at all and the API applies its own default, which is `transactional` — the right one for Blade mailables.
 
 ### `lettr:generate-enum`
 

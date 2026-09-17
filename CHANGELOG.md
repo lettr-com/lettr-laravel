@@ -35,6 +35,118 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Relative `lettr.templates.*` paths are resolved against `base_path()` instead of the working directory, trailing slashes are ignored, and namespaces with a leading or trailing backslash no longer generate invalid PHP.
 - `lettr:pull`, `lettr:generate-dtos` and `lettr:push` no longer repeat results from an earlier run when called more than once in the same process.
 
+## [2.6.0] - 2026-09-09
+
+Knowing when an imported template is actually ready, and — the headline — **queued sends can no longer deliver the same email twice**.
+
+### Added
+
+- **Idempotent queued sends, on by default.** A send issued from inside a queue job now carries a generated `Idempotency-Key`. If the job is retried — the API accepted the send, the response timed out, the job threw — the retry returns the original result instead of delivering a second email.
+
+  The key is `hash(job uuid + payload)`, and needs both halves. The **job uuid** is what survives a retry (Laravel re-pushes the identical payload, and `queue:retry` only resets `attempts` and `retry_until`) and what differs between two deliberate dispatches. The **payload hash** is what keeps a job that sends several emails working — one key per job would give the second email in a `foreach` a 409.
+
+  **Synchronous sends get no key.** A retried HTTP request is a new process, so there is nothing stable to derive one from; a key generated per call would change on every attempt and protect nothing. Pass one explicitly for those.
+
+  Three ways out:
+
+  ```php
+  // Your own key — an order id is more meaningful than a generated hash
+  Mail::lettr()->idempotencyKey('order-12345')->send(new OrderShipped($order));
+
+  // A deliberate resend: send it again, on purpose
+  Mail::lettr()->withoutIdempotency()->send(new OrderShipped($order));
+
+  // Or turn the default off everywhere
+  // config/lettr.php → 'idempotency' => ['enabled' => false]
+  ```
+
+  `LettrMailable` gained the same `idempotencyKey()` and `withoutIdempotency()` methods. Scheduled sends are unaffected — they go to a different endpoint that takes no key.
+
+- **`preparation_status` on template responses**, via lettr-php's new `TemplatePreparationStatus` (`Pending`, `Ready`, `Failed`). Creating or updating a template through the API defers image migration and HTML rendering to a background job; this says whether the content you sent is the content that will go out.
+
+  Mind that it is **not** the same question as "can I send this". After an *update* the previous render stays in place, so a `Pending` template is still sendable — it is serving the old content. That is why the helper is `->isSettled()`.
+
+- **`ListTemplatesFilter::folderId()`** — reconcile a bulk import with one `perPage(100)` call for the folder instead of a detail call per template, each dragging the full HTML payload against the same rate limit.
+
+- **`Support\CurrentQueueJob`** — the uuid of the job being processed, kept current by listeners on `JobProcessing` / `JobProcessed` / `JobFailed`. Scoped and cleared between jobs, since a worker is one long-running process.
+
+### Changed
+
+- **Upgraded `lettr/lettr-php` to `^2.7.0`.** Additive: new constructor parameters were appended last on the existing DTOs, and `TransporterContract` is untouched, so custom transporter implementations keep compiling. A custom transporter that does not implement the new `SupportsRequestHeaders` silently sends no idempotency key rather than failing — add the interface and one method to opt in.
+
+### Notes
+
+- **Keys are scoped per team *and* API key.** The same key through a different API key is a different key, so several workers with separate API keys will not deduplicate against each other.
+- The provider retains a key for **24 hours**.
+- A replay is a **success**, not an error: `$response->replayed` is true and no second email went out.
+
+## [2.5.0] - 2026-09-07
+
+Covers the marketing side of templates. Everything here is additive — code written against 2.4.0 keeps compiling and sends byte-identical requests.
+
+### Added
+
+- **`Lettr::folders()`** — lists the folders templates are filed into, wrapping the SDK's new `FolderService`. This is what `CreateTemplateData::$folderId` was missing: nothing in the package ever returned a folder id, so a caller either omitted `folderId` and accepted whichever folder the API picked, or hardcoded an integer read out of an app URL by hand.
+
+  ```php
+  use Lettr\Dto\Folder\ListFoldersFilter;
+  use Lettr\Dto\Template\CreateTemplateData;
+  use Lettr\Enums\TemplatePurpose;
+  use Lettr\Laravel\Facades\Lettr;
+
+  $campaigns = Lettr::folders()
+      ->list(ListFoldersFilter::create()->purpose(TemplatePurpose::Campaign))
+      ->folders
+      ->first();
+
+  Lettr::templates()->create(new CreateTemplateData(
+      name: 'October Newsletter',
+      folderId: $campaigns?->id,
+      json: $topolJson,
+      purpose: TemplatePurpose::Campaign,
+  ));
+  ```
+
+  Each folder carries its `purpose` and `templatesCount`, so a campaign folder can be picked without guessing from the name. Read-only — creating, renaming and deleting folders stay in the app, because deleting one moves or deletes the templates inside it.
+- **Template `purpose`** throughout, via the SDK's new `Lettr\Enums\TemplatePurpose` (`Transactional`, `Campaign`): settable on `CreateTemplateData`, filterable on `ListTemplatesFilter`, and returned on every template response DTO. `Lettr::templates()` passes the DTOs straight through, so this needed no wrapper change.
+- **`lettr:push --purpose=`** — creates the pushed templates in one module. Without it no `purpose` key is sent at all and the API applies its own default (`transactional`), which is the right one for Blade mailables; the flag is there for the case where campaign HTML lives in the same directory. An unrecognised value fails the command before it touches the filesystem. `lettr:push` also picked up a README section — it was the one CLI command with none.
+
+### Changed
+
+- **Upgraded `lettr/lettr-php` to `^2.6.0`** for the purpose enum and the folder endpoint. The SDK change is additive: new constructor parameters were appended last on the existing DTOs, so positional construction keeps working, and `TransporterContract` is untouched, so custom transporter implementations are unaffected.
+
+### Notes
+
+- **There is no way to change a template's module after the fact.** `PUT /templates/{slug}` does not accept a `purpose`, so `UpdateTemplateData` deliberately has none — moving a template across modules has to copy its versions and merge tags into the other module's folder, which is a separate endpoint that does not exist yet. Set the purpose when you create the template.
+- **A response without `purpose` reads as `Transactional`.** That is what such a template is, so the field is a plain enum rather than a nullable one and never needs a null check — but it does mean an older API deployment is indistinguishable from a genuinely transactional template.
+
+## [2.4.0] - 2026-08-14
+
+### Added
+
+- **Reworked bulk contact import** — reachable through `Lettr::audience()->contacts()`:
+  - `BulkCreateAudienceContactsData::forContacts()` addresses each contact individually — every `BulkAudienceContactRow` carries its own `properties`, `listIds` and `topics`, on top of the batch-wide values. `::forEmails()` names the original flat shape; the plain constructor still accepts `(emails, listId, properties)` positionally, so existing calls send byte-identical payloads.
+  - Topic subscriptions are expressed as `AudienceTopicSubscription::optIn()` / `::optOut()` (enum `AudienceTopicSubscriptionState`). A row-level `optOut()` suppresses the auto-subscription of an opt-out-by-default topic **in the same request**, and beats a batch-level opt-in for that contact.
+  - `updateExisting: true` merges properties on existing contacts (submitted keys overwrite, absent keys are preserved). The default `false` still attaches existing contacts to the requested lists — unchanged behaviour.
+  - `BulkStoreAudienceContactsResult` now reports what happened per row: `updated`, `errorCount`, `errors` (`BulkAudienceContactError[]`), and `contacts` (`BulkAudienceContactRef[]`, so you get ids back without a follow-up lookup), plus the helpers `hasErrors()`, `contactIds()` and `idFor(string $email)`.
+- **Bulk topic subscribe/unsubscribe** — `contacts()->bulkSubscribeTopics()` and `->bulkUnsubscribeTopics()`, both taking a `BulkAudienceContactTopicsData` (`contactIds` × `topicIds`, up to 1000 × 50). Feed them `$result->contactIds()` straight from a bulk create.
+- **`ContactAlreadyExistsException`** — creating a contact whose email already exists now throws a dedicated exception (HTTP 409, `resource_already_exists`) carrying the colliding `->email`, instead of surfacing as an HTTP 500 with the misleading `send_error` code. It extends `ConflictException` → `ApiException`, so existing handlers keep catching it. See the **Error Handling** section of the README.
+- **`ApiException::errorCode()`** (and the readonly `->errorCode`) exposes the API's machine-readable `error_code` on every API exception, or `null` when the API didn't send one.
+
+### Changed
+
+- **Upgraded `lettr/lettr-php` to `^2.5.0`** for the bulk contact import rework. The SDK change is additive — `TransporterContract` is untouched, so custom transporter implementations are unaffected.
+
+### Notes
+
+Three behaviours in the new bulk create are easy to get wrong:
+
+- **A bulk create can partially succeed.** Rows that fail validation are skipped and returned in `errors` while the rest of the batch commits — and the call still returns HTTP 201. Check `hasErrors()`; don't read a successful return as "everything landed".
+- **`alreadyExisted` and `updated` overlap by design.** They answer different questions ("was the address already in the audience?" vs "did this request change the contact?"), so they don't sum to the row count: a contact that already existed and got attached to a list is counted in both.
+- **An empty payload now throws.** `new BulkCreateAudienceContactsData([])` raises `InvalidValueException` instead of being sent to the API — the one non-additive edge of the SDK upgrade.
+
+Duplicate contact creates are also no longer picked up by a 5xx retry policy, since they now arrive as a 409. `withRateLimitRetry()` in this package only ever retried `RateLimitException`, so it is unaffected.
+
 ## [2.3.0] - 2026-06-01
 
 ### Added

@@ -16,6 +16,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Idempotent Sends
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, emails sent from inside a queue job carry a generated
+    | `Idempotency-Key`, so a job that is retried after a timeout cannot deliver
+    | the same email twice. The key combines the job's uuid with a hash of the
+    | payload: stable across retries of one send, different for every fresh
+    | dispatch, and different for each email a job sends in a loop.
+    |
+    | Synchronous sends get no key - a retried HTTP request is a new process,
+    | so there is nothing stable to derive one from. Pass a key explicitly with
+    | `Mail::lettr()->idempotencyKey(...)` for those.
+    |
+    | Turn this off to restore the pre-2.6.0 behaviour everywhere at once.
+    |
+    */
+
+    'idempotency' => [
+        'enabled' => env('LETTR_IDEMPOTENCY_ENABLED', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Template Paths
     |--------------------------------------------------------------------------
     |
