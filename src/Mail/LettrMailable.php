@@ -23,6 +23,8 @@ abstract class LettrMailable extends Mailable
 
     /**
      * The Blade view for this email (for Blade view mode).
+     *
+     * @var view-string|null
      */
     protected ?string $bladeView = null;
 
