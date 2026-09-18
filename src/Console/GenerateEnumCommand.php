@@ -6,17 +6,21 @@ namespace Lettr\Laravel\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
-use Lettr\Dto\Template\ListTemplatesFilter;
 use Lettr\Dto\Template\Template;
-use Lettr\Laravel\Concerns\ThrottlesApiRequests;
+use Lettr\Laravel\Concerns\FetchesAllTemplates;
+use Lettr\Laravel\Concerns\WarnsAboutOverwrites;
 use Lettr\Laravel\LettrManager;
+use Lettr\Laravel\Support\AutoloadCheck;
+use Lettr\Laravel\Support\GeneratedCode;
+use Lettr\Laravel\Support\PhpIdentifier;
+use Lettr\Laravel\Support\TemplatesConfig;
 
 use function Laravel\Prompts\progress;
 
 class GenerateEnumCommand extends Command
 {
-    use ThrottlesApiRequests;
+    use FetchesAllTemplates;
+    use WarnsAboutOverwrites;
 
     /**
      * The name and signature of the console command.
@@ -71,9 +75,7 @@ class GenerateEnumCommand extends Command
      */
     protected function fetchTemplates(): array
     {
-        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100)));
-
-        return $response->templates->all();
+        return $this->fetchAllTemplates();
     }
 
     /**
@@ -83,9 +85,9 @@ class GenerateEnumCommand extends Command
      */
     protected function generateEnum(array $templates, bool $dryRun): void
     {
-        $enumPath = config('lettr.templates.enum_path');
-        $namespace = config('lettr.templates.enum_namespace');
-        $className = config('lettr.templates.enum_class');
+        $enumPath = TemplatesConfig::path('enum_path');
+        $namespace = TemplatesConfig::namespace('enum_namespace');
+        $className = TemplatesConfig::enumClass();
 
         $fullPath = $enumPath.'/'.$className.'.php';
         $relativePath = str_replace(base_path().'/', '', $fullPath);
@@ -96,18 +98,21 @@ class GenerateEnumCommand extends Command
         // Build enum content
         $stub = $this->getStubContent();
         $content = str_replace(
-            ['{{ namespace }}', '{{ class }}', '{{ cases }}'],
-            [$namespace, $className, $cases],
+            ['{{ namespace }}', '{{ docblock }}', '{{ class }}', '{{ cases }}'],
+            [$namespace, GeneratedCode::docblock('Slugs of the templates in your Lettr account.', '`php artisan lettr:generate-enum`', "don't edit it by hand."), $className, $cases],
             $stub
         );
+
+        $overwritten = $this->files->exists($fullPath);
 
         if (! $dryRun) {
             $this->ensureDirectoryExists($enumPath);
             $this->files->put($fullPath, $content);
+            $this->warnIfNotAutoloadable($namespace.'\\'.$className, $fullPath);
         }
 
         // Output summary
-        $this->outputSummary($namespace.'\\'.$className, $relativePath, count($templates), $dryRun);
+        $this->outputSummary($namespace.'\\'.$className, $relativePath, count($templates), $dryRun, $overwritten);
     }
 
     /**
@@ -128,7 +133,7 @@ class GenerateEnumCommand extends Command
 
         foreach ($templates as $template) {
             $caseName = $this->slugToCaseName($template->slug);
-            $lines[] = "    case {$caseName} = '{$template->slug}';";
+            $lines[] = "    case {$caseName} = ".var_export($template->slug, true).';';
             $progress->advance();
         }
 
@@ -142,7 +147,7 @@ class GenerateEnumCommand extends Command
      */
     protected function slugToCaseName(string $slug): string
     {
-        return Str::studly($slug);
+        return PhpIdentifier::enumCase($slug);
     }
 
     /**
@@ -153,6 +158,16 @@ class GenerateEnumCommand extends Command
         $stubPath = __DIR__.'/../../stubs/template-enum.stub';
 
         return $this->files->get($stubPath);
+    }
+
+    /**
+     * Warn when the generated class won't load under the app's PSR-4 mapping.
+     */
+    protected function warnIfNotAutoloadable(string $class, string $file): void
+    {
+        if (($warning = AutoloadCheck::warning($class, $file)) !== null) {
+            $this->components->warn($warning);
+        }
     }
 
     /**
@@ -168,18 +183,20 @@ class GenerateEnumCommand extends Command
     /**
      * Output the summary of the generated enum.
      */
-    protected function outputSummary(string $fullyQualifiedClass, string $relativePath, int $caseCount, bool $dryRun): void
+    protected function outputSummary(string $fullyQualifiedClass, string $relativePath, int $caseCount, bool $dryRun, bool $overwritten = false): void
     {
         $this->newLine();
 
         $prefix = $dryRun ? 'Would generate' : 'Generated';
         $this->components->twoColumnDetail("<fg=gray>{$prefix}:</>");
         $this->components->twoColumnDetail(
-            "  <fg=green>✓</> {$fullyQualifiedClass}",
+            "  {$this->writeMarker($overwritten)} {$fullyQualifiedClass}",
             $relativePath
         );
 
         $this->newLine();
+
+        $this->warnAboutOverwrites((int) $overwritten, $dryRun);
 
         $action = $dryRun ? 'Would generate' : 'Generated';
         $this->components->info("Done! {$action} enum with {$caseCount} case(s).");

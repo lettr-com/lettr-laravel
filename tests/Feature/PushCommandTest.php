@@ -73,6 +73,12 @@ it('auto-discovers emails folder and confirms with user', function () {
     $emailsPath = $basePath.'/emails';
     $bladeFile = $emailsPath.'/order-confirmation.blade.php';
 
+    // blade_path (where lettr:pull writes) is checked first
+    $this->filesystem
+        ->shouldReceive('isDirectory')
+        ->with(resource_path('views/emails/lettr'))
+        ->andReturn(false);
+
     // First check for 'emails' folder
     $this->filesystem
         ->shouldReceive('isDirectory')

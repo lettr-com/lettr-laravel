@@ -139,7 +139,8 @@ class SparkpostToBladeConverter
             $beforeBlock = substr($content, 0, $startPos);
             $afterBlock = substr($content, $endPos + strlen('{{/each}}'));
 
-            $content = $beforeBlock.'@foreach($'.$collection.' as $'.$itemVar.')'.$blockContent.'@endforeach'.$afterBlock;
+            // `?? []` so an optional loop left out renders nothing, as {{#each}} does
+            $content = $beforeBlock.'@foreach($'.$collection.' ?? [] as $'.$itemVar.')'.$blockContent.'@endforeach'.$afterBlock;
         }
 
         return $content;
@@ -181,17 +182,20 @@ class SparkpostToBladeConverter
     }
 
     /**
-     * Convert variables within an each block, replacing this. with $item->.
+     * Convert variables within an each block, replacing this. with $item[...].
+     *
+     * Loop items are arrays: generated DTOs turn them into arrays in toArray(),
+     * which is also the shape substitution data has when sent to the API.
      */
     protected function convertEachBlockVariables(string $blockContent, string $itemVar): string
     {
-        // Convert this.property.nested to $item->property->nested
+        // Convert this.property.nested to $item['property']['nested']
         $blockContent = preg_replace_callback(
             '/\bthis\.(\w+(?:\.\w+)*)/',
             function (array $matches) use ($itemVar) {
-                $properties = str_replace('.', '->', $matches[1]);
+                $keys = array_map(fn (string $key): string => "['{$key}']", explode('.', $matches[1]));
 
-                return '$'.$itemVar.'->'.$properties;
+                return '$'.$itemVar.implode('', $keys);
             },
             $blockContent
         ) ?? $blockContent;

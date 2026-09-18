@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace {{ namespace }};
 
 use Illuminate\Contracts\Support\Arrayable;
-{{ imports }}
+
+{{ classDocblock }}
 final readonly class {{ class }} implements Arrayable
 {
 {{ docblock }}    public function __construct(
 {{ properties }}
     ) {}
 
+    /**
+     * @return array<string, mixed>
+     */
     public function toArray(): array
     {
         return [

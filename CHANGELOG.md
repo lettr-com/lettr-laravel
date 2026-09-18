@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Autoload warning** — `lettr:generate-enum`, `lettr:generate-dtos` and `lettr:pull` warn when a generated class won't load because its configured namespace doesn't match the path under the app's PSR-4 mapping.
+- **Generated-file docblocks** — every generated enum, DTO and Mailable gets a class docblock saying what it is (e.g. "Merge tags of the Lettr template `order`"), which command generated it, and that running the command again overwrites the file.
+- **Overwrite warning** — `lettr:pull`, `lettr:generate-enum` and `lettr:generate-dtos` still rewrite every file they generate, but now mark files that already existed with ↻ in the summary and end with a warning that local changes to them are gone. `--dry-run` reports what would be overwritten.
+
+### Changed
+
+- **Generated code follows Laravel's code style** and passes Pint with the Laravel preset: imports are sorted and same-namespace imports dropped, DTO docblocks use Laravel's alignment and only mark optional loops `|null`, `toArray()` declares `@return array<string, mixed>`, and a Mailable for a template without merge tags has no empty constructor. Generated Blade Mailables no longer repeat `content()` and `buildViewData()`, which `LettrMailable` already provides.
+- **API-template Mailables no longer set a subject.** `lettr:pull --with-mailables --as-html` (and `--skip-templates`) used to generate `subject: Str::headline($template->name)`, which replaced the subject configured on the template in Lettr. The template's own subject is now used; set one in `envelope()` to override it. Blade Mailables keep their generated subject.
+- **Loops in pulled Blade views are null-safe and use array access.** `{{#each items}}{{this.name}}` now converts to `@foreach($items ?? [] as $item){{ $item['name'] }}` instead of `@foreach($items as $item){{ $item->name }}`, matching the arrays generated DTOs pass to the view and rendering nothing when an optional loop is left out. `lettr:push` converts both back.
+- **`lettr:push` looks in `lettr.templates.blade_path` first** when `--path` isn't given, so it finds what `lettr:pull` wrote. A relative `--path` is resolved against the project root.
+- **camelCase merge tag keys keep their casing in DTOs** — `orderId` becomes `$orderId` instead of `$orderid`. All-uppercase keys (`FIRST_NAME` → `$firstName`) are unchanged. Re-generated DTOs may rename such constructor parameters.
+
+### Fixed
+
+- `lettr:pull`, `lettr:generate-enum` and `lettr:generate-dtos` read every page of templates instead of only the first 100.
+- Slugs starting with a digit (`2fa-code`) no longer generate invalid PHP: classes and enum cases get a `Template` prefix (`Template2faCode`, `Template2faCodeData`).
+- Slugs that are PHP reserved words no longer generate invalid PHP: classes get a `Template` suffix (`NewTemplate`), and the enum case for `class` becomes `ClassTemplate`.
+- A template name containing an apostrophe no longer produces a Mailable with a parse error — all values in generated code are escaped.
+- Blade Mailables with a loop no longer fail with `Attempt to read property on array` when rendered.
+- A DTO whose optional loop merge tag is left out no longer throws a `TypeError` from `toArray()`.
+- Merge tag keys that camelCase to the same name (`FIRST_NAME` and `first_name`) no longer produce a duplicate constructor parameter; they keep their raw keys as property names. Loop keys whose item DTOs would share a name are numbered.
+- Blade Mailables use a view name derived from `lettr.templates.blade_path`, so a custom path resolves. A path outside the view paths prints a warning.
+- `lettr:pull` and `lettr:generate-dtos` exit with a failure code when `--template` names a template that does not exist.
+- A published `config/lettr.php` whose `templates` array lacks a key no longer crashes the generators with a `TypeError`; missing keys fall back to the package defaults. (`mergeConfigFrom()` only merges top-level keys.)
+- Relative `lettr.templates.*` paths are resolved against `base_path()` instead of the working directory, trailing slashes are ignored, and namespaces with a leading or trailing backslash no longer generate invalid PHP.
+- `lettr:pull`, `lettr:generate-dtos` and `lettr:push` no longer repeat results from an earlier run when called more than once in the same process.
+
 ## [2.6.0] - 2026-09-09
 
 Knowing when an imported template is actually ready, and — the headline — **queued sends can no longer deliver the same email twice**.

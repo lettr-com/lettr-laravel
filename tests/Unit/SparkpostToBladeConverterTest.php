@@ -94,8 +94,8 @@ describe('foreach loop conversion', function () {
         $sparkpost = '{{#each items}}
 {{this.name}}
 {{/each}}';
-        $expected = '@foreach($items as $item)
-{{ $item->name }}
+        $expected = '@foreach($items ?? [] as $item)
+{{ $item[\'name\'] }}
 @endforeach';
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
@@ -105,7 +105,7 @@ describe('foreach loop conversion', function () {
         $sparkpost = '{{#each items}}
 {{this}}
 {{/each}}';
-        $expected = '@foreach($items as $item)
+        $expected = '@foreach($items ?? [] as $item)
 {{ $item }}
 @endforeach';
 
@@ -116,8 +116,8 @@ describe('foreach loop conversion', function () {
         $sparkpost = '{{#each orders}}
 {{this.customer.name}}
 {{/each}}';
-        $expected = '@foreach($orders as $order)
-{{ $order->customer->name }}
+        $expected = '@foreach($orders ?? [] as $order)
+{{ $order[\'customer\'][\'name\'] }}
 @endforeach';
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
@@ -129,7 +129,7 @@ describe('foreach loop conversion', function () {
 Index: {{@index}}
 {{#if @last}}Last!{{/if}}
 {{/each}}';
-        $expected = '@foreach($items as $item)
+        $expected = '@foreach($items ?? [] as $item)
 @if($loop->first)First!@endif
 Index: {{ $loop->index }}
 @if($loop->last)Last!@endif
@@ -140,14 +140,14 @@ Index: {{ $loop->index }}
 
     it('uses singular form for item variable', function () {
         $sparkpost = '{{#each users}}{{this.email}}{{/each}}';
-        $expected = '@foreach($users as $user){{ $user->email }}@endforeach';
+        $expected = "@foreach(\$users ?? [] as \$user){{ \$user['email'] }}@endforeach";
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
     });
 
     it('handles collection names that are already singular', function () {
         $sparkpost = '{{#each data}}{{this.value}}{{/each}}';
-        $expected = '@foreach($data as $dataItem){{ $dataItem->value }}@endforeach';
+        $expected = "@foreach(\$data ?? [] as \$dataItem){{ \$dataItem['value'] }}@endforeach";
 
         expect($this->converter->convert($sparkpost))->toBe($expected);
     });
@@ -278,9 +278,9 @@ describe('complex templates', function () {
     @if($hasOrders)
     <h2>Your Orders</h2>
     <ul>
-    @foreach($orders as $order)
+    @foreach($orders ?? [] as $order)
         <li>
-            Order #{{ $order->id }}: {{ $order->total }}
+            Order #{{ $order[\'id\'] }}: {{ $order[\'total\'] }}
             @if($loop->last)
             (Most recent)
             @endif
@@ -352,8 +352,8 @@ describe('nested loops', function () {
 
         $result = $this->converter->convert($sparkpost);
 
-        expect($result)->toContain('@foreach($categories as $category)');
-        expect($result)->toContain('{{ $category->name }}');
+        expect($result)->toContain('@foreach($categories ?? [] as $category)');
+        expect($result)->toContain("{{ \$category['name'] }}");
         expect($result)->toContain('@endforeach');
     });
 });

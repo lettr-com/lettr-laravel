@@ -7,6 +7,7 @@ use Lettr\Laravel\Support\DtoGenerator;
 
 beforeEach(function () {
     $this->filesystem = Mockery::mock(Filesystem::class);
+    $this->filesystem->shouldReceive('exists')->andReturn(false)->byDefault();
     $this->generator = new DtoGenerator($this->filesystem);
 
     config()->set('lettr.templates.dto_path', base_path('app/Dto/Lettr'));
@@ -38,7 +39,7 @@ it('generates dto that implements Arrayable', function () {
         ->and($result['class'])->toBe('App\\Dto\\Lettr\\TestTemplateData');
 });
 
-it('generates imports for nested dto classes', function () {
+it('does not import nested dto classes from its own namespace', function () {
     $mergeTags = [
         new MergeTag(
             key: 'items',
@@ -73,11 +74,11 @@ it('generates imports for nested dto classes', function () {
 
     $mainContent = $writtenFiles[$mainPath];
     expect($mainContent)
-        ->toContain('use App\Dto\Lettr\OrderListDataItemData;')
+        ->not->toContain('use App\Dto\Lettr\OrderListDataItemData;')
         ->toContain('use Illuminate\Contracts\Support\Arrayable;');
 });
 
-it('generates dto with multiple nested imports', function () {
+it('does not import multiple nested dto classes from its own namespace', function () {
     $mergeTags = [
         new MergeTag(
             key: 'orders',
@@ -120,8 +121,8 @@ it('generates dto with multiple nested imports', function () {
 
     $mainContent = $writtenFiles[$mainPath];
     expect($mainContent)
-        ->toContain('use App\Dto\Lettr\MultiNestedDataOrderData;')
-        ->toContain('use App\Dto\Lettr\MultiNestedDataProductData;')
+        ->not->toContain('use App\Dto\Lettr\MultiNestedDataOrderData;')
+        ->not->toContain('use App\Dto\Lettr\MultiNestedDataProductData;')
         ->toContain('use Illuminate\Contracts\Support\Arrayable;');
 });
 

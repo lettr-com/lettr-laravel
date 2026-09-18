@@ -69,6 +69,7 @@ function createMergeTagsResponse(string $slug, array $mergeTags, int $projectId 
 
 beforeEach(function () {
     $this->filesystem = Mockery::mock(Filesystem::class);
+    $this->filesystem->shouldReceive('exists')->andReturn(false)->byDefault();
     $this->lettrManager = Mockery::mock(LettrManager::class);
     $this->templateService = Mockery::mock(TemplateServiceWrapper::class);
 
@@ -190,7 +191,7 @@ it('generates nested dto for merge tags with children', function () {
     $mainPath = collect($writtenFiles)->keys()->first(fn ($p) => str_ends_with($p, 'OrderConfirmationData.php'));
     expect($mainPath)->not->toBeNull();
     expect($writtenFiles[$mainPath])
-        ->toContain('@param OrderConfirmationDataOrderData[]|null $order')
+        ->toContain('@param  OrderConfirmationDataOrderData[]  $order')
         ->toContain('public array $order,')
         ->toContain("'order' => array_map(fn (OrderConfirmationDataOrderData \$item) => \$item->toArray(), \$this->order),");
 });
@@ -632,7 +633,7 @@ it('generates nested dtos that also implement Arrayable interface', function () 
     }
 });
 
-it('includes proper imports for nested dto classes', function () {
+it('does not import nested dto classes from its own namespace', function () {
     $templates = [createDtoTemplate(1, 'Import Test', 'import-test')];
     $templateDetail = createDtoTemplateDetail(1, 'Import Test', 'import-test');
     $mergeTags = [
@@ -685,8 +686,9 @@ it('includes proper imports for nested dto classes', function () {
     $mainPath = collect($writtenFiles)->keys()->first(fn ($p) => str_ends_with($p, 'ImportTestData.php') && ! str_contains($p, 'OrderData'));
     expect($mainPath)->not->toBeNull();
 
-    // Verify it imports the nested DTO class
+    // The nested DTO shares the namespace, so it needs no import
     expect($writtenFiles[$mainPath])
-        ->toContain('use App\Dto\Lettr\ImportTestDataOrderData;')
-        ->toContain('use Illuminate\Contracts\Support\Arrayable;');
+        ->not->toContain('use App\Dto\Lettr\ImportTestDataOrderData;')
+        ->toContain('use Illuminate\Contracts\Support\Arrayable;')
+        ->toContain('fn (ImportTestDataOrderData $item)');
 });

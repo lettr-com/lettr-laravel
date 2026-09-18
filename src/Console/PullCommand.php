@@ -6,21 +6,29 @@ namespace Lettr\Laravel\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Support\Str;
-use Lettr\Dto\Template\ListTemplatesFilter;
+use Illuminate\View\FileViewFinder;
 use Lettr\Dto\Template\MergeTag;
 use Lettr\Dto\Template\Template;
 use Lettr\Dto\Template\TemplateDetail;
-use Lettr\Laravel\Concerns\ThrottlesApiRequests;
+use Lettr\Laravel\Concerns\FetchesAllTemplates;
+use Lettr\Laravel\Concerns\WarnsAboutOverwrites;
 use Lettr\Laravel\LettrManager;
+use Lettr\Laravel\Mail\LettrMailable;
+use Lettr\Laravel\Support\AutoloadCheck;
 use Lettr\Laravel\Support\DtoGenerator;
+use Lettr\Laravel\Support\GeneratedCode;
+use Lettr\Laravel\Support\PhpIdentifier;
 use Lettr\Laravel\Support\SparkpostToBladeConverter;
+use Lettr\Laravel\Support\TemplatesConfig;
 
 use function Laravel\Prompts\progress;
 
 class PullCommand extends Command
 {
-    use ThrottlesApiRequests;
+    use FetchesAllTemplates;
+    use WarnsAboutOverwrites;
 
     /**
      * The name and signature of the console command.
@@ -42,17 +50,17 @@ class PullCommand extends Command
     protected $description = 'Pull email templates from Lettr API as Blade files';
 
     /**
-     * @var array<int, array{slug: string, path: string}>
+     * @var array<int, array{slug: string, path: string, overwritten: bool}>
      */
     protected array $downloadedTemplates = [];
 
     /**
-     * @var array<int, array{class: string, path: string}>
+     * @var array<int, array{class: string, path: string, overwritten: bool}>
      */
     protected array $generatedMailables = [];
 
     /**
-     * @var array<int, array{class: string, path: string}>
+     * @var array<int, array{class: string, path: string, overwritten: bool}>
      */
     protected array $generatedDtos = [];
 
@@ -60,6 +68,11 @@ class PullCommand extends Command
      * @var array<int, string>
      */
     protected array $skippedTemplates = [];
+
+    /**
+     * Whether the blade_path warning has been shown this run.
+     */
+    protected bool $warnedAboutBladePath = false;
 
     public function __construct(
         protected readonly LettrManager $lettr,
@@ -75,6 +88,10 @@ class PullCommand extends Command
      */
     public function handle(): int
     {
+        // Artisan reuses the command instance within a process, so start each run clean
+        $this->downloadedTemplates = $this->generatedMailables = $this->generatedDtos = $this->skippedTemplates = [];
+        $this->warnedAboutBladePath = false;
+
         $this->components->info('Pulling templates from Lettr...');
 
         /** @var string|null $templateSlug */
@@ -88,6 +105,10 @@ class PullCommand extends Command
         $templates = $this->fetchTemplates($templateSlug);
 
         if (empty($templates)) {
+            if ($templateSlug !== null) {
+                return self::FAILURE;
+            }
+
             $this->components->warn('No templates found.');
 
             return self::SUCCESS;
@@ -95,6 +116,16 @@ class PullCommand extends Command
 
         // Process templates with progress bar
         $this->processTemplates($templates, $dryRun, $withMailables, $asHtml, $skipTemplates);
+
+        if (! $dryRun) {
+            if (isset($this->generatedDtos[0])) {
+                $this->warnIfNotAutoloadable($this->generatedDtos[0]['class'], TemplatesConfig::path('dto_path'));
+            }
+
+            if (isset($this->generatedMailables[0])) {
+                $this->warnIfNotAutoloadable($this->generatedMailables[0]['class'], TemplatesConfig::path('mailable_path'));
+            }
+        }
 
         // Output summary
         $this->outputSummary($dryRun, $withMailables, $skipTemplates);
@@ -109,8 +140,7 @@ class PullCommand extends Command
      */
     protected function fetchTemplates(?string $templateSlug): array
     {
-        $response = $this->withRateLimitRetry(fn () => $this->lettr->templates()->list(new ListTemplatesFilter(perPage: 100)));
-        $templates = $response->templates->all();
+        $templates = $this->fetchAllTemplates();
 
         // Filter by slug if specified
         if ($templateSlug !== null) {
@@ -167,15 +197,9 @@ class PullCommand extends Command
 
         // Save template file (HTML or Blade) unless skipping
         if (! $skipTemplates) {
-            if ($asHtml) {
-                $templatePath = $this->saveHtml($detail, $dryRun);
-            } else {
-                $templatePath = $this->saveBlade($detail, $dryRun);
-            }
-
             $this->downloadedTemplates[] = [
                 'slug' => $detail->slug,
-                'path' => $templatePath,
+                ...($asHtml ? $this->saveHtml($detail, $dryRun) : $this->saveBlade($detail, $dryRun)),
             ];
         }
 
@@ -195,8 +219,7 @@ class PullCommand extends Command
             // Generate Mailable with DTO integration
             // Use API template slug mode when skipping templates or --as-html
             $useBlade = ! $skipTemplates && ! $asHtml;
-            $mailable = $this->generateMailable($detail, $mergeTags, $dryRun, $useBlade);
-            $this->generatedMailables[] = $mailable;
+            $this->generatedMailables[] = $this->generateMailable($detail, $mergeTags, $dryRun, $useBlade);
         }
     }
 
@@ -218,31 +241,37 @@ class PullCommand extends Command
 
     /**
      * Save the template as an HTML file.
+     *
+     * @return array{path: string, overwritten: bool}
      */
-    protected function saveHtml(TemplateDetail $template, bool $dryRun): string
+    protected function saveHtml(TemplateDetail $template, bool $dryRun): array
     {
-        $htmlPath = config('lettr.templates.html_path');
+        $htmlPath = TemplatesConfig::path('html_path');
         $filename = $template->slug.'.html';
         $fullPath = $htmlPath.'/'.$filename;
         $relativePath = str_replace(base_path().'/', '', $fullPath);
+        $overwritten = $this->files->exists($fullPath);
 
         if (! $dryRun) {
             $this->ensureDirectoryExists($htmlPath);
             $this->files->put($fullPath, (string) $template->html);
         }
 
-        return $relativePath;
+        return ['path' => $relativePath, 'overwritten' => $overwritten];
     }
 
     /**
      * Save the template as a Blade file.
+     *
+     * @return array{path: string, overwritten: bool}
      */
-    protected function saveBlade(TemplateDetail $template, bool $dryRun): string
+    protected function saveBlade(TemplateDetail $template, bool $dryRun): array
     {
-        $bladePath = config('lettr.templates.blade_path');
+        $bladePath = TemplatesConfig::path('blade_path');
         $filename = $template->slug.'.blade.php';
         $fullPath = $bladePath.'/'.$filename;
         $relativePath = str_replace(base_path().'/', '', $fullPath);
+        $overwritten = $this->files->exists($fullPath);
 
         if (! $dryRun) {
             $this->ensureDirectoryExists($bladePath);
@@ -250,25 +279,27 @@ class PullCommand extends Command
             $this->files->put($fullPath, $bladeContent);
         }
 
-        return $relativePath;
+        return ['path' => $relativePath, 'overwritten' => $overwritten];
     }
 
     /**
      * Generate a Mailable class for the template.
      *
      * @param  array<int, MergeTag>  $mergeTags
-     * @return array{class: string, path: string}
+     * @return array{class: string, path: string, overwritten: bool}
      */
     protected function generateMailable(TemplateDetail $template, array $mergeTags, bool $dryRun, bool $useBlade = true): array
     {
-        $mailablePath = config('lettr.templates.mailable_path');
-        $namespace = config('lettr.templates.mailable_namespace');
+        $mailablePath = TemplatesConfig::path('mailable_path');
+        $namespace = TemplatesConfig::namespace('mailable_namespace');
 
         $className = $this->slugToClassName($template->slug);
         $filename = $className.'.php';
         $fullPath = $mailablePath.'/'.$filename;
         $relativePath = str_replace(base_path().'/', '', $fullPath);
         $fullyQualifiedClass = $namespace.'\\'.$className;
+
+        $overwritten = $this->files->exists($fullPath);
 
         if (! $dryRun) {
             $this->ensureDirectoryExists($mailablePath);
@@ -281,6 +312,7 @@ class PullCommand extends Command
         return [
             'class' => $fullyQualifiedClass,
             'path' => $relativePath,
+            'overwritten' => $overwritten,
         ];
     }
 
@@ -294,42 +326,38 @@ class PullCommand extends Command
         $stubPath = __DIR__.'/../../stubs/mailable.stub';
         $stub = $this->files->get($stubPath);
 
-        // Convert template name to a readable subject
-        $subject = Str::headline($template->name);
-
-        // Generate DTO-related stub content
-        $hasMergeTags = ! empty($mergeTags);
-        $dtoClassName = $this->dtoGenerator->getDtoClassName($template->slug);
-        $dtoFullClass = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
-
-        $dtoImport = $hasMergeTags ? "use {$dtoFullClass};" : '';
-        $dtoProperty = $hasMergeTags ? "public readonly {$dtoClassName} \$data," : '';
-        $withMergeTagsMethod = $hasMergeTags ? $this->generateWithMergeTagsMethod() : '';
+        // No subject: the template's own subject in Lettr is used unless the request sets one
 
         // Generate HTML path relative to base path
-        $htmlBasePath = config('lettr.templates.html_path');
+        $htmlBasePath = TemplatesConfig::path('html_path');
         $htmlPath = str_replace(base_path().'/', '', $htmlBasePath).'/'.$template->slug.'.html';
+
+        $imports = [Envelope::class, LettrMailable::class];
+
+        if ($mergeTags !== []) {
+            $imports[] = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
+        }
 
         return str_replace(
             [
                 '{{ namespace }}',
+                '{{ imports }}',
+                '{{ docblock }}',
                 '{{ class }}',
                 '{{ slug }}',
-                '{{ subject }}',
                 '{{ htmlPath }}',
-                '{{ dtoImport }}',
-                '{{ dtoProperty }}',
+                '{{ constructor }}',
                 '{{ withMergeTagsMethod }}',
             ],
             [
                 $namespace,
+                GeneratedCode::imports($namespace, $imports),
+                $this->mailableDocblock("Sends the Lettr template `{$template->slug}` through the Lettr API".($mergeTags !== [] ? ', with the merge tags passed to the constructor.' : '.')),
                 $className,
-                $template->slug,
-                $subject,
-                $htmlPath,
-                $dtoImport,
-                $dtoProperty,
-                $withMergeTagsMethod,
+                var_export($template->slug, true),
+                var_export($htmlPath, true),
+                $this->generateConstructor($template, $mergeTags),
+                $mergeTags !== [] ? $this->generateWithMergeTagsMethod() : '',
             ],
             $stub
         );
@@ -348,39 +376,75 @@ class PullCommand extends Command
         // Convert template name to a readable subject
         $subject = Str::headline($template->name);
 
-        // Generate DTO-related stub content
-        $hasMergeTags = ! empty($mergeTags);
-        $dtoClassName = $this->dtoGenerator->getDtoClassName($template->slug);
-        $dtoFullClass = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
-
-        $dtoImport = $hasMergeTags ? "use {$dtoFullClass};" : '';
-        $dtoProperty = $hasMergeTags ? "public readonly {$dtoClassName} \$data," : '';
-        $withMergeTagsMethod = $hasMergeTags ? $this->generateWithMergeTagsMethod() : '';
-
         // Generate Blade view path (dot notation for Laravel views)
-        $bladeView = 'emails.lettr.'.$template->slug;
+        $bladeView = $this->bladeViewName($template->slug);
+
+        $imports = [Envelope::class, LettrMailable::class];
+
+        if ($mergeTags !== []) {
+            $imports[] = $this->dtoGenerator->getFullyQualifiedDtoClassName($template->slug);
+        }
 
         return str_replace(
             [
                 '{{ namespace }}',
+                '{{ imports }}',
+                '{{ docblock }}',
                 '{{ class }}',
                 '{{ bladeView }}',
                 '{{ subject }}',
-                '{{ dtoImport }}',
-                '{{ dtoProperty }}',
+                '{{ constructor }}',
                 '{{ withMergeTagsMethod }}',
             ],
             [
                 $namespace,
+                GeneratedCode::imports($namespace, $imports),
+                $this->mailableDocblock("Sends the Blade view `{$bladeView}`, pulled from the Lettr template `{$template->slug}` and rendered by your app."),
                 $className,
-                $bladeView,
-                $subject,
-                $dtoImport,
-                $dtoProperty,
-                $withMergeTagsMethod,
+                var_export($bladeView, true),
+                var_export($subject, true),
+                $this->generateConstructor($template, $mergeTags),
+                $mergeTags !== [] ? $this->generateWithMergeTagsMethod() : '',
             ],
             $stub
         );
+    }
+
+    /**
+     * The class docblock of a generated Mailable.
+     */
+    protected function mailableDocblock(string $description): string
+    {
+        return GeneratedCode::docblock(
+            $description,
+            '`php artisan lettr:pull --with-mailables`',
+            'commit any changes you make here before pulling again.',
+        );
+    }
+
+    /**
+     * Generate the Mailable constructor, or nothing when the template has no merge tags.
+     *
+     * @param  array<int, MergeTag>  $mergeTags
+     */
+    protected function generateConstructor(TemplateDetail $template, array $mergeTags): string
+    {
+        if ($mergeTags === []) {
+            return '';
+        }
+
+        $dtoClassName = $this->dtoGenerator->getDtoClassName($template->slug);
+
+        return <<<PHP
+
+    /**
+     * Create a new message instance.
+     */
+    public function __construct(
+        public readonly {$dtoClassName} \$data,
+    ) {}
+
+PHP;
     }
 
     /**
@@ -389,6 +453,7 @@ class PullCommand extends Command
     protected function generateWithMergeTagsMethod(): string
     {
         return <<<'PHP'
+
 
     /**
      * Get the merge tags for this mailable.
@@ -403,11 +468,54 @@ PHP;
     }
 
     /**
+     * Get the dot-notation view name of a pulled Blade template.
+     *
+     * The name is derived from lettr.templates.blade_path relative to the view
+     * paths, so a custom blade_path still resolves.
+     */
+    protected function bladeViewName(string $slug): string
+    {
+        $bladePath = TemplatesConfig::path('blade_path');
+
+        $finder = app('view')->getFinder();
+        $viewPaths = $finder instanceof FileViewFinder ? $finder->getPaths() : [resource_path('views')];
+
+        foreach ($viewPaths as $viewPath) {
+            $viewPath = rtrim($viewPath, '/');
+
+            if ($bladePath === $viewPath) {
+                return $slug;
+            }
+
+            if (str_starts_with($bladePath, $viewPath.'/')) {
+                return str_replace('/', '.', substr($bladePath, strlen($viewPath) + 1)).'.'.$slug;
+            }
+        }
+
+        if (! $this->warnedAboutBladePath) {
+            $this->warnedAboutBladePath = true;
+            $this->components->warn("lettr.templates.blade_path ({$bladePath}) is not inside a view path, so the generated Mailables cannot find their views.");
+        }
+
+        return 'emails.lettr.'.$slug;
+    }
+
+    /**
+     * Warn when a generated class won't load under the app's PSR-4 mapping.
+     */
+    protected function warnIfNotAutoloadable(string $class, string $directory): void
+    {
+        if (($warning = AutoloadCheck::warning($class, $directory.'/'.class_basename($class).'.php')) !== null) {
+            $this->components->warn($warning);
+        }
+    }
+
+    /**
      * Convert a slug to a class name.
      */
     protected function slugToClassName(string $slug): string
     {
-        return Str::studly($slug);
+        return PhpIdentifier::className($slug);
     }
 
     /**
@@ -433,7 +541,7 @@ PHP;
 
             foreach ($this->downloadedTemplates as $template) {
                 $this->components->twoColumnDetail(
-                    "  <fg=green>✓</> {$template['slug']}",
+                    "  {$this->writeMarker($template['overwritten'])} {$template['slug']}",
                     $template['path']
                 );
             }
@@ -446,7 +554,7 @@ PHP;
 
             foreach ($this->generatedDtos as $dto) {
                 $this->components->twoColumnDetail(
-                    "  <fg=green>✓</> {$dto['class']}",
+                    "  {$this->writeMarker($dto['overwritten'])} {$dto['class']}",
                     $dto['path']
                 );
             }
@@ -459,8 +567,8 @@ PHP;
 
             foreach ($this->generatedMailables as $mailable) {
                 $this->components->twoColumnDetail(
-                    "  <fg=green>✓</> {$mailable['class']}",
-                    ''
+                    "  {$this->writeMarker($mailable['overwritten'])} {$mailable['class']}",
+                    $mailable['path']
                 );
             }
         }
@@ -478,6 +586,11 @@ PHP;
         }
 
         $this->newLine();
+
+        $this->warnAboutOverwrites(
+            count(array_filter([...$this->downloadedTemplates, ...$this->generatedDtos, ...$this->generatedMailables], fn (array $file): bool => $file['overwritten'])),
+            $dryRun,
+        );
 
         if ($skipTemplates) {
             $mailableCount = count($this->generatedMailables);
