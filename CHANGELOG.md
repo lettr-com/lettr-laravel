@@ -4,7 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.7.0] - 2026-09-18
+
+The code generators now produce code that compiles and runs on any account, and they read the `lettr.templates.*` config the way an app actually writes it.
+
+### Upgrading
+
+Nothing breaks on upgrade, but the generators produce different output, so regenerate and review the diff:
+
+```bash
+php artisan lettr:generate-enum
+php artisan lettr:pull --with-mailables      # add --as-html for Lettr-template Mailables
+```
+
+- **Re-pull your Blade views.** Loops now convert to `@foreach($items ?? [] as $item)` with `$item['key']`. Views pulled with an earlier version still use `$item->key` and break when rendered with a generated DTO.
+- **Check regenerated DTOs for renamed parameters.** A camelCase merge tag key such as `orderId` now yields `$orderId` instead of `$orderid`, so named arguments at call sites may need updating.
+- **Regenerated Lettr-template Mailables no longer set a subject**, so the subject configured on the template in Lettr is used. Set one in `envelope()` to keep the old behaviour.
+- Generated files gain a docblock and Laravel formatting, so expect a one-time diff across all of them.
 
 ### Added
 
