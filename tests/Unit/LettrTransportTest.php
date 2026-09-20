@@ -469,7 +469,27 @@ it('routes scheduled emails to the /emails/scheduled endpoint when X-Lettr-Sched
             $this->uri = $uri;
             $this->captured = $data;
 
-            return ['request_id' => 'scheduled-id', 'accepted' => 1, 'rejected' => 0];
+            // The shape POST /emails/scheduled actually returns. From
+            // lettr-php 2.8.0 the response is parsed into a ScheduledEmail,
+            // which needs `state`, `scheduled_at` and `from`; earlier versions
+            // read only request_id/accepted/rejected and ignore the rest, so
+            // this fake satisfies both.
+            return [
+                'request_id' => 'sch_01JQZ3N2K8XW9V6M4TBRC7YHDE',
+                'transmission_id' => null,
+                'state' => 'scheduled',
+                'scheduled_at' => '2030-01-01T12:00:00Z',
+                'from' => 'sender@example.com',
+                'from_name' => null,
+                'subject' => 'Scheduled',
+                'recipients' => ['recipient@example.com'],
+                'num_recipients' => 1,
+                'accepted' => 1,
+                'rejected' => 0,
+                'tag' => null,
+                'failure_reason' => null,
+                'events' => [],
+            ];
         }
 
         public function get(string $uri): array

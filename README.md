@@ -227,6 +227,8 @@ Mail::to('user@example.com')
 | `customHeaders($headers)` | Set custom email headers |
 | `scheduledAt($when)` | Schedule delivery for a future `DateTimeInterface` (or ISO-8601 string) |
 
+> **Scheduled sends and webhooks.** For a scheduled email the `X-Lettr-Request-ID` header carries Lettr's own id (`sch_...`), not the transmission id that webhook events carry. The transmission id is assigned only when the email is actually sent — read it later with `Lettr::emails()->getScheduled($requestId)->transmissionId`. Immediate sends are unaffected.
+
 ### Example: Order Confirmation
 
 ```php
