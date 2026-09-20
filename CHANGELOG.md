@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] - 2026-09-20
+
+Requires `lettr/lettr-php` ^2.8.0, which changes how scheduled emails come back from the API. Nothing in this package's own surface changes: the mailer, `LettrMailable`, `scheduleAt()` and the facade all behave exactly as before.
+
+### Upgrading
+
+**If you use `X-Lettr-Request-ID` to match scheduled sends against webhook events, that stopped working when the API changed — before this release, and regardless of this package.**
+
+For a scheduled send that header now carries Lettr's own id (`sch_...`), which identifies the scheduled email but **never appears on a webhook event**. The provider's transmission id — the value webhooks carry — does not exist yet at scheduling time; it is assigned when the email is actually sent. Read it afterwards with `Lettr::emails()->getScheduled($requestId)->transmissionId`.
+
+Immediate sends are unaffected: the header still carries the transmission id, as it always did.
+
+### Added
+
+- `Lettr::emails()->listScheduled()` — lists what is queued, with `status`, `perPage` and `page`. New in lettr-php 2.8.0 and reachable here with no code in this package, because `emails()` returns the SDK's `EmailService` directly.
+- `Lettr::emails()->schedule()`, `getScheduled()` and `cancelScheduled()` now return a `ScheduledEmail` carrying the state, both ids, and `failureReason`. `getScheduled()` threw against the live API before 2.8.0.
+
+### Changed
+
+- `lettr/lettr-php` constraint moved from `^2.7.0` to `^2.8.0`.
+- The scheduling window is now 5 minutes to 30 days, up from 3 days. `scheduleAt()` and `scheduledAt()` never validated the window client-side, so this needs no code change — longer schedules simply work now.
+
+### Fixed
+
+- The test double for the scheduled-send path returned the old three-field response, which 2.8.0 parses into a `ScheduledEmail` and rejects. Tests only; `/tests` is `export-ignore`, so no released version of this package was affected.
+
 ## [2.7.0] - 2026-09-18
 
 The code generators now produce code that compiles and runs on any account, and they read the `lettr.templates.*` config the way an app actually writes it.
