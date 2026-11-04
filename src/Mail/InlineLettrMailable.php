@@ -43,9 +43,4 @@ final class InlineLettrMailable extends LettrMailable
             $this->scheduledAt($scheduledAt);
         }
     }
-
-    public function build(): static
-    {
-        return parent::build();
-    }
 }

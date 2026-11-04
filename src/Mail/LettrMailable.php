@@ -10,6 +10,7 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Symfony\Component\Mime\Email;
 
 abstract class LettrMailable extends Mailable
 {
@@ -66,6 +67,11 @@ abstract class LettrMailable extends Mailable
      * Whether this send should carry no idempotency key at all.
      */
     protected bool $withoutIdempotency = false;
+
+    /**
+     * Whether the Lettr headers callback has been registered on this instance.
+     */
+    private bool $lettrHeadersRegistered = false;
 
     /**
      * Set the template slug.
@@ -222,7 +228,7 @@ abstract class LettrMailable extends Mailable
      * Get the merge tags for the template.
      *
      * Override this method in subclasses to provide merge tag data.
-     * This is automatically called during build() and merged with substitutionData.
+     * This is called automatically before sending and merged with substitutionData.
      *
      * @return array<string, mixed>
      */
@@ -233,16 +239,40 @@ abstract class LettrMailable extends Mailable
 
     /**
      * Build the message.
+     *
+     * Override this to configure the mailable - template(), substitutionData(),
+     * customHeaders() and the rest. Calling parent::build() is not required: the
+     * Lettr setup runs after build(), whatever build() does.
      */
     public function build(): static
     {
+        return $this;
+    }
+
+    /**
+     * Prepare the mailable for delivery.
+     *
+     * Laravel calls this before every send and render. The Lettr setup runs here,
+     * after the subclass's build(), so it sees the final template, data and
+     * headers no matter how - or whether - build() was overridden.
+     */
+    protected function prepareMailableForDelivery()
+    {
+        $mailerBeforeBuild = $this->mailer;
+
+        parent::prepareMailableForDelivery();
+
         // If using Blade view, skip Lettr-specific setup
         if ($this->bladeView !== null) {
-            return $this;
+            return;
         }
 
-        // Use the lettr mailer/transport for API template mode
-        $this->mailer('lettr');
+        // Use the lettr mailer/transport, unless build() chose a mailer itself.
+        // Laravel names the sending mailer on the mailable before preparing it, so
+        // a value that is unchanged here was not the subclass's choice.
+        if ($this->mailer === $mailerBeforeBuild) {
+            $this->mailer('lettr');
+        }
 
         // Merge data from withMergeTags() with any manually set substitution data
         $mergeTags = $this->withMergeTags();
@@ -256,54 +286,63 @@ abstract class LettrMailable extends Mailable
             $this->html('<p>This email uses Lettr template: '.$this->templateSlug.'</p>');
         }
 
-        // Register callback to add Lettr headers
-        $this->withSymfonyMessage(function ($message): void {
-            if ($this->templateSlug !== null) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Template-Slug', $this->templateSlug);
-            }
+        // Register the headers callback once: it reads the properties when the
+        // message is built, so a second send of the same instance must not add
+        // every header twice.
+        if (! $this->lettrHeadersRegistered) {
+            $this->lettrHeadersRegistered = true;
+            $this->withSymfonyMessage(fn ($message) => $this->addLettrHeaders($message));
+        }
+    }
 
-            if ($this->templateVersion !== null) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Template-Version', (string) $this->templateVersion);
-            }
+    /**
+     * Add the Lettr headers to the outgoing Symfony message.
+     */
+    private function addLettrHeaders(Email $message): void
+    {
+        if ($this->templateSlug !== null) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Template-Slug', $this->templateSlug);
+        }
 
-            if ($this->projectId !== null) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Project-Id', (string) $this->projectId);
-            }
+        if ($this->templateVersion !== null) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Template-Version', (string) $this->templateVersion);
+        }
 
-            if (count($this->substitutionData) > 0) {
-                $message->getHeaders()->addTextHeader(
-                    'X-Lettr-Substitution-Data',
-                    base64_encode(json_encode($this->substitutionData, JSON_THROW_ON_ERROR))
-                );
-            }
+        if ($this->projectId !== null) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Project-Id', (string) $this->projectId);
+        }
 
-            if ($this->scheduledAt !== null) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Scheduled-At', $this->scheduledAt);
-            }
+        if (count($this->substitutionData) > 0) {
+            $message->getHeaders()->addTextHeader(
+                'X-Lettr-Substitution-Data',
+                base64_encode(json_encode($this->substitutionData, JSON_THROW_ON_ERROR))
+            );
+        }
 
-            if ($this->withoutIdempotency) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Idempotency', 'disabled');
-            } elseif ($this->idempotencyKey !== null) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Idempotency-Key', $this->idempotencyKey);
-            }
+        if ($this->scheduledAt !== null) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Scheduled-At', $this->scheduledAt);
+        }
 
-            // Add custom headers
-            foreach ($this->customHeaders as $name => $value) {
-                $message->getHeaders()->addTextHeader($name, $value);
-            }
+        if ($this->withoutIdempotency) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Idempotency', 'disabled');
+        } elseif ($this->idempotencyKey !== null) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Idempotency-Key', $this->idempotencyKey);
+        }
 
-            // Add tag header:
-            // - If tags set by user, join with _ and use that
-            // - If using template slug and no tags, skip (server uses template slug as tag)
-            // - If not using template slug, auto-generate from mailable class name
-            if (count($this->tags) > 0) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Tag', implode('_', $this->tags));
-            } elseif ($this->templateSlug === null) {
-                $message->getHeaders()->addTextHeader('X-Lettr-Tag', $this->generateTag());
-            }
-        });
+        // Add custom headers
+        foreach ($this->customHeaders as $name => $value) {
+            $message->getHeaders()->addTextHeader($name, $value);
+        }
 
-        return $this;
+        // Add tag header:
+        // - If tags set by user, join with _ and use that
+        // - If using template slug and no tags, skip (server uses template slug as tag)
+        // - If not using template slug, auto-generate from mailable class name
+        if (count($this->tags) > 0) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Tag', implode('_', $this->tags));
+        } elseif ($this->templateSlug === null) {
+            $message->getHeaders()->addTextHeader('X-Lettr-Tag', $this->generateTag());
+        }
     }
 
     /**
