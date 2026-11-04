@@ -184,3 +184,106 @@ it('renders a template mailable whose build() does not call the parent', functio
 
     expect($html)->toContain('welcome-email');
 });
+
+it('keeps HTML the subclass set after parent::build()', function () {
+    $message = sendThroughArrayMailer(new class extends LettrMailable
+    {
+        public function build(): static
+        {
+            return parent::build()->template('welcome-email')->html('<p>Custom preview</p>');
+        }
+    });
+
+    expect($message->getHtmlBody())->toBe('<p>Custom preview</p>')
+        ->and(headerValues($message, 'X-Lettr-Template-Slug'))->toBe(['welcome-email']);
+});
+
+it('updates the placeholder when the template changes between sends', function () {
+    $mailable = new class extends LettrMailable
+    {
+        public function build(): static
+        {
+            return $this->templateSlug === null ? $this->template('first') : $this;
+        }
+    };
+
+    sendThroughArrayMailer($mailable);
+    $mailable->template('second');
+    $message = sendThroughArrayMailer($mailable);
+
+    expect($message->getHtmlBody())->toContain('second')
+        ->and(headerValues($message, 'X-Lettr-Template-Slug'))->toBe(['second']);
+});
+
+it('keeps a mailer build() chose even when it matches the one already set', function () {
+    $mailable = new class extends LettrMailable
+    {
+        public function build(): static
+        {
+            // 'array' is also the mailer the send below names on the mailable first
+            return $this->template('welcome-email')->mailer('array');
+        }
+    };
+
+    sendThroughArrayMailer($mailable);
+
+    expect($mailable->mailer)->toBe('array');
+});
+
+it('sends a clone with its own headers', function () {
+    $original = new class extends LettrMailable
+    {
+        public function build(): static
+        {
+            return $this->templateSlug === null ? $this->template('original') : $this;
+        }
+    };
+
+    sendThroughArrayMailer($original);
+
+    $copy = clone $original;
+    $copy->template('copy')->idempotencyKey('copy-key');
+    $message = sendThroughArrayMailer($copy);
+
+    expect(headerValues($message, 'X-Lettr-Template-Slug'))->toBe(['copy'])
+        ->and(headerValues($message, 'X-Lettr-Idempotency-Key'))->toBe(['copy-key']);
+});
+
+it('adds each header once when the same instance is sent twice', function () {
+    $mailable = new class extends LettrMailable
+    {
+        public function build(): static
+        {
+            return parent::build()->template('welcome-email');
+        }
+    };
+
+    sendThroughArrayMailer($mailable);
+    $message = sendThroughArrayMailer($mailable);
+
+    expect(headerValues($message, 'X-Lettr-Template-Slug'))->toBe(['welcome-email']);
+});
+
+it('reads fresh merge tags on every send', function () {
+    $mailable = new class extends LettrMailable
+    {
+        public string $status = 'pending';
+
+        public function build(): static
+        {
+            return $this->template('order-status');
+        }
+
+        public function withMergeTags(): array
+        {
+            return ['status' => $this->status];
+        }
+    };
+
+    sendThroughArrayMailer($mailable);
+    $mailable->status = 'shipped';
+    $message = sendThroughArrayMailer($mailable);
+
+    expect(json_decode(base64_decode(headerValues($message, 'X-Lettr-Substitution-Data')[0]), true))
+        ->toBe(['status' => 'shipped']);
+});

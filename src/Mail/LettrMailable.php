@@ -9,6 +9,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Mail\Message;
 use Illuminate\Queue\SerializesModels;
 use Symfony\Component\Mime\Email;
 
@@ -69,9 +70,19 @@ abstract class LettrMailable extends Mailable
     protected bool $withoutIdempotency = false;
 
     /**
-     * Whether the Lettr headers callback has been registered on this instance.
+     * Whether prepareMailableForDelivery() is running the subclass's build().
      */
-    private bool $lettrHeadersRegistered = false;
+    private bool $lettrPreparing = false;
+
+    /**
+     * Whether build() picked a mailer, so the Lettr setup must not replace it.
+     */
+    private bool $lettrMailerChosen = false;
+
+    /**
+     * The placeholder HTML this class last set, to tell it from the subclass's own.
+     */
+    private ?string $lettrPlaceholderHtml = null;
 
     /**
      * Set the template slug.
@@ -228,7 +239,7 @@ abstract class LettrMailable extends Mailable
      * Get the merge tags for the template.
      *
      * Override this method in subclasses to provide merge tag data.
-     * This is called automatically before sending and merged with substitutionData.
+     * This is called on every send and merged with substitutionData, which wins on conflicts.
      *
      * @return array<string, mixed>
      */
@@ -250,6 +261,24 @@ abstract class LettrMailable extends Mailable
     }
 
     /**
+     * Set the mailer that should send the message.
+     *
+     * Recorded when called from build(), so the Lettr setup keeps that choice
+     * even when it names the mailer the mailable already had.
+     *
+     * @param  string  $mailer
+     * @return $this
+     */
+    public function mailer($mailer)
+    {
+        if ($this->lettrPreparing) {
+            $this->lettrMailerChosen = true;
+        }
+
+        return parent::mailer($mailer);
+    }
+
+    /**
      * Prepare the mailable for delivery.
      *
      * Laravel calls this before every send and render. The Lettr setup runs here,
@@ -259,40 +288,56 @@ abstract class LettrMailable extends Mailable
     protected function prepareMailableForDelivery()
     {
         $mailerBeforeBuild = $this->mailer;
+        $this->lettrPreparing = true;
 
-        parent::prepareMailableForDelivery();
+        try {
+            parent::prepareMailableForDelivery();
+        } finally {
+            $mailerChosen = $this->lettrMailerChosen;
+            $this->lettrPreparing = false;
+            $this->lettrMailerChosen = false;
+        }
 
         // If using Blade view, skip Lettr-specific setup
         if ($this->bladeView !== null) {
             return;
         }
 
-        // Use the lettr mailer/transport, unless build() chose a mailer itself.
-        // Laravel names the sending mailer on the mailable before preparing it, so
-        // a value that is unchanged here was not the subclass's choice.
-        if ($this->mailer === $mailerBeforeBuild) {
+        // Route through the lettr mailer unless build() chose one (by calling
+        // mailer() or assigning the property). This decides the transport only
+        // where Laravel resolves it from the mailable - queued sends and sends
+        // through the mail manager; Mail::mailer('x')->send() has already picked.
+        if (! $mailerChosen && $this->mailer === $mailerBeforeBuild) {
             $this->mailer('lettr');
         }
 
-        // Merge data from withMergeTags() with any manually set substitution data
-        $mergeTags = $this->withMergeTags();
-        if (! empty($mergeTags)) {
-            $this->substitutionData = array_merge($mergeTags, $this->substitutionData);
+        // Set placeholder HTML - the actual content comes from the Lettr template.
+        // Laravel's Mailer needs some content; HTML the subclass set itself wins.
+        if ($this->templateSlug !== null && (! isset($this->html) || $this->html === $this->lettrPlaceholderHtml)) {
+            $this->lettrPlaceholderHtml = '<p>This email uses Lettr template: '.$this->templateSlug.'</p>';
+            $this->html($this->lettrPlaceholderHtml);
+        }
+    }
+
+    /**
+     * Run the callbacks for the message, then add the Lettr headers.
+     *
+     * Added here rather than through withSymfonyMessage(), so each send reads the
+     * mailable's current state once - no duplicates on a repeated send, and a
+     * clone carries its own values rather than the original's.
+     *
+     * @param  Message  $message
+     * @return $this
+     */
+    protected function runCallbacks($message)
+    {
+        parent::runCallbacks($message);
+
+        if ($this->bladeView === null) {
+            $this->addLettrHeaders($message->getSymfonyMessage());
         }
 
-        // Set placeholder HTML - the actual content comes from the Lettr template
-        // This is required because Laravel's Mailer expects some content
-        if ($this->templateSlug !== null) {
-            $this->html('<p>This email uses Lettr template: '.$this->templateSlug.'</p>');
-        }
-
-        // Register the headers callback once: it reads the properties when the
-        // message is built, so a second send of the same instance must not add
-        // every header twice.
-        if (! $this->lettrHeadersRegistered) {
-            $this->lettrHeadersRegistered = true;
-            $this->withSymfonyMessage(fn ($message) => $this->addLettrHeaders($message));
-        }
+        return $this;
     }
 
     /**
@@ -312,10 +357,13 @@ abstract class LettrMailable extends Mailable
             $message->getHeaders()->addTextHeader('X-Lettr-Project-Id', (string) $this->projectId);
         }
 
-        if (count($this->substitutionData) > 0) {
+        // Merge tags are read fresh for every send; explicitly set data wins
+        $substitutionData = array_merge($this->withMergeTags(), $this->substitutionData);
+
+        if (count($substitutionData) > 0) {
             $message->getHeaders()->addTextHeader(
                 'X-Lettr-Substitution-Data',
-                base64_encode(json_encode($this->substitutionData, JSON_THROW_ON_ERROR))
+                base64_encode(json_encode($substitutionData, JSON_THROW_ON_ERROR))
             );
         }
 
