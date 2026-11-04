@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\SentMessage;
 use Illuminate\Support\Facades\Mail;
 use Lettr\Laravel\Mail\LettrMailable;
@@ -287,3 +288,30 @@ it('reads fresh merge tags on every send', function () {
     expect(json_decode(base64_decode(headerValues($message, 'X-Lettr-Substitution-Data')[0]), true))
         ->toBe(['status' => 'shipped']);
 });
+
+it('routes a queued send through the lettr mailer even when another mailer is the default', function () {
+    // Stand in for the Lettr transport so the queued job can be observed end to end
+    config([
+        'mail.default' => 'log',
+        'mail.mailers.lettr' => ['transport' => 'array'],
+        'queue.default' => 'sync',
+    ]);
+
+    Mail::to('user@example.com')->queue(new QueuedWelcomeMailable);
+
+    $messages = Mail::mailer('lettr')->getSymfonyTransport()->messages();
+
+    expect($messages)->toHaveCount(1)
+        ->and(headerValues($messages[0]->getOriginalMessage(), 'X-Lettr-Template-Slug'))->toBe(['welcome-email']);
+});
+
+/**
+ * Named, because a queued job is serialized and anonymous classes cannot be.
+ */
+class QueuedWelcomeMailable extends LettrMailable implements ShouldQueue
+{
+    public function build(): static
+    {
+        return $this->template('welcome-email');
+    }
+}
