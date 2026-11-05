@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\View;
 use Lettr\Laravel\Mail\LettrMailable;
@@ -163,4 +164,24 @@ it('keeps a hand-set X-Lettr-Tag on a plain HTML mailable too', function (): voi
 
     expect(iterator_to_array($headers->all('X-Lettr-Tag'), false))->toHaveCount(1)
         ->and($headers->get('X-Lettr-Tag')?->getBodyAsString())->toBe('hand-set');
+});
+
+it('does not repeat envelope tags when a mailable is rendered before it is sent', function (): void {
+    $mailable = new class extends LettrMailable
+    {
+        protected ?string $bladeView = 'lettr-test::order';
+
+        public function envelope(): Envelope
+        {
+            return new Envelope(tags: ['orders']);
+        }
+
+        public function withMergeTags(): array
+        {
+            return ['name' => 'John'];
+        }
+    };
+    $mailable->render();
+
+    expect(sentEmail($mailable)->getHeaders()->get('X-Lettr-Tag')?->getBodyAsString())->toBe('orders');
 });

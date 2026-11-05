@@ -413,7 +413,8 @@ abstract class LettrMailable extends Mailable
         // - If using template slug and no tags, skip (server uses template slug as tag)
         // - If not using template slug, auto-generate from mailable class name
         if (count($this->tags) > 0) {
-            $this->addLettrHeader($message, 'X-Lettr-Tag', implode('_', $this->tags));
+            // Laravel re-adds envelope tags on every prepare, so drop the repeats.
+            $this->addLettrHeader($message, 'X-Lettr-Tag', implode('_', array_unique($this->tags)));
         } elseif ($this->templateSlug === null) {
             $this->addLettrHeader($message, 'X-Lettr-Tag', $this->generateTag());
         }
@@ -442,6 +443,7 @@ abstract class LettrMailable extends Mailable
 
         // The API rejects tags over 64 characters, and a tag that is only there
         // for analytics must never be the reason an email fails to send.
-        return rtrim(substr($tag, 0, self::MAX_GENERATED_TAG_LENGTH), '-');
+        // mb_strcut() counts bytes, as the API does, without splitting a character.
+        return rtrim(mb_strcut($tag, 0, self::MAX_GENERATED_TAG_LENGTH, 'UTF-8'), '-');
     }
 }
