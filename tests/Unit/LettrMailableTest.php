@@ -153,7 +153,7 @@ it('adds an auto-generated tag when no template is used', function () {
         ->and(headerValues($message, 'X-Lettr-Template-Slug'))->toBe([]);
 });
 
-it('leaves Blade view mode alone', function () {
+it('sends a Blade mailable as rendered HTML, with only a tag added', function () {
     $this->app['view']->addNamespace('lettr-test', __DIR__.'/../fixtures/views');
 
     $mailable = new class extends LettrMailable
@@ -168,9 +168,10 @@ it('leaves Blade view mode alone', function () {
 
     $message = sendThroughArrayMailer($mailable);
 
+    // No template and no forced mailer, but it is tagged like any non-template send.
     expect($message->getHtmlBody())->toContain('Plain Blade body')
         ->and(headerValues($message, 'X-Lettr-Template-Slug'))->toBe([])
-        ->and(headerValues($message, 'X-Lettr-Tag'))->toBe([])
+        ->and(headerValues($message, 'X-Lettr-Tag'))->toHaveCount(1)
         ->and($mailable->mailer)->toBe('array');
 });
 
