@@ -11,7 +11,7 @@ Official Laravel integration for the [Lettr](https://lettr.com) email API.
 ## Requirements
 
 - PHP 8.4+
-- Laravel 10.x, 11.x, 12.x, or 13.x
+- Laravel 10.25+, 11.x, 12.x, or 13.x
 
 ## Installation
 
@@ -203,6 +203,8 @@ class WelcomeEmail extends LettrMailable
     }
 }
 ```
+
+You don't need to call `parent::build()` — the Lettr setup runs after your `build()`, whatever it does.
 
 Then send it like any other Mailable:
 
