@@ -38,11 +38,11 @@ jobs:
           extensions: mbstring, json
           coverage: none
 
-      - name: Allow end-of-life Laravel 10
-        if: matrix.laravel == '10.*'
-        # Laravel 10 is past end of life and every release now carries a security
-        # advisory, so Composer refuses to install any of them by default. Lifting
-        # that here only affects this test run, not what users install.
+      - name: Allow end-of-life Laravel versions
+        if: matrix.laravel == '10.*' || matrix.laravel == '11.*'
+        # Laravel 10 and 11 are past their security support and every release now
+        # carries a security advisory, so Composer refuses to install any of them by
+        # default. Lifting that here only affects this test run, not what users install.
         run: composer config policy.advisories.block false
 
       - name: Install dependencies

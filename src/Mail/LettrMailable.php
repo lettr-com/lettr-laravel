@@ -313,7 +313,9 @@ abstract class LettrMailable extends Mailable
 
         // Set placeholder HTML - the actual content comes from the Lettr template.
         // Laravel's Mailer needs some content; HTML the subclass set itself wins.
-        if ($this->templateSlug !== null && (! isset($this->html) || $this->html === $this->lettrPlaceholderHtml)) {
+        // in_array() rather than isset(): Laravel 10-12 document $html as a
+        // non-nullable string although it starts out null.
+        if ($this->templateSlug !== null && in_array($this->html, [null, $this->lettrPlaceholderHtml], true)) {
             $this->lettrPlaceholderHtml = '<p>This email uses Lettr template: '.$this->templateSlug.'</p>';
             $this->html($this->lettrPlaceholderHtml);
         }
