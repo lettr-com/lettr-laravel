@@ -456,7 +456,7 @@ try {
     // Duplicate contact (409) — client-correctable, never retry
     Log::info("Contact already exists: " . $e->email);
 } catch (RateLimitException $e) {
-    // Too many requests (429)
+    // Too many requests (429), after the SDK's own retries ran out
     Log::warning("Rate limited, retry after: " . $e->retryAfter . "s");
 } catch (QuotaExceededException $e) {
     // Sending quota exceeded
