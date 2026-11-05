@@ -19,6 +19,11 @@ abstract class LettrMailable extends Mailable
     use SerializesModels;
 
     /**
+     * The longest tag the Lettr API accepts.
+     */
+    private const MAX_GENERATED_TAG_LENGTH = 64;
+
+    /**
      * The Lettr template slug (for API template mode).
      */
     protected ?string $templateSlug = null;
@@ -328,6 +333,14 @@ abstract class LettrMailable extends Mailable
      * mailable's current state once - no duplicates on a repeated send, and a
      * clone carries its own values rather than the original's.
      *
+     * The app's own callbacks - withSymfonyMessage() and headers() - run first,
+     * and a Lettr header they already set is kept, so a hand-set X-Lettr-Tag is
+     * not overridden by the generated one.
+     *
+     * A Blade mailable sends rendered HTML, so it gets only the sending headers:
+     * the tag, scheduling, idempotency and custom headers. The template headers
+     * and substitution data do not apply to it.
+     *
      * @param  Message  $message
      * @return $this
      */
@@ -335,48 +348,59 @@ abstract class LettrMailable extends Mailable
     {
         parent::runCallbacks($message);
 
+        $email = $message->getSymfonyMessage();
+
         if ($this->bladeView === null) {
-            $this->addLettrHeaders($message->getSymfonyMessage());
+            $this->addTemplateHeaders($email);
         }
+
+        $this->addSendingHeaders($email);
 
         return $this;
     }
 
     /**
-     * Add the Lettr headers to the outgoing Symfony message.
+     * Add the headers that select a Lettr template and fill it in.
      */
-    private function addLettrHeaders(Email $message): void
+    private function addTemplateHeaders(Email $message): void
     {
         if ($this->templateSlug !== null) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Template-Slug', $this->templateSlug);
+            $this->addLettrHeader($message, 'X-Lettr-Template-Slug', $this->templateSlug);
         }
 
         if ($this->templateVersion !== null) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Template-Version', (string) $this->templateVersion);
+            $this->addLettrHeader($message, 'X-Lettr-Template-Version', (string) $this->templateVersion);
         }
 
         if ($this->projectId !== null) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Project-Id', (string) $this->projectId);
+            $this->addLettrHeader($message, 'X-Lettr-Project-Id', (string) $this->projectId);
         }
 
         // Merge tags are read fresh for every send; explicitly set data wins
         $substitutionData = array_merge($this->withMergeTags(), $this->substitutionData);
 
         if (count($substitutionData) > 0) {
-            $message->getHeaders()->addTextHeader(
+            $this->addLettrHeader(
+                $message,
                 'X-Lettr-Substitution-Data',
                 base64_encode(json_encode($substitutionData, JSON_THROW_ON_ERROR))
             );
         }
+    }
 
+    /**
+     * Add the headers that apply to any send, with or without a template.
+     */
+    private function addSendingHeaders(Email $message): void
+    {
         if ($this->scheduledAt !== null) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Scheduled-At', $this->scheduledAt);
+            $this->addLettrHeader($message, 'X-Lettr-Scheduled-At', $this->scheduledAt);
         }
 
         if ($this->withoutIdempotency) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Idempotency', 'disabled');
+            $this->addLettrHeader($message, 'X-Lettr-Idempotency', 'disabled');
         } elseif ($this->idempotencyKey !== null) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Idempotency-Key', $this->idempotencyKey);
+            $this->addLettrHeader($message, 'X-Lettr-Idempotency-Key', $this->idempotencyKey);
         }
 
         // Add custom headers
@@ -389,9 +413,19 @@ abstract class LettrMailable extends Mailable
         // - If using template slug and no tags, skip (server uses template slug as tag)
         // - If not using template slug, auto-generate from mailable class name
         if (count($this->tags) > 0) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Tag', implode('_', $this->tags));
+            $this->addLettrHeader($message, 'X-Lettr-Tag', implode('_', $this->tags));
         } elseif ($this->templateSlug === null) {
-            $message->getHeaders()->addTextHeader('X-Lettr-Tag', $this->generateTag());
+            $this->addLettrHeader($message, 'X-Lettr-Tag', $this->generateTag());
+        }
+    }
+
+    /**
+     * Add a Lettr header unless the app has already set it.
+     */
+    private function addLettrHeader(Email $message, string $name, string $value): void
+    {
+        if (! $message->getHeaders()->has($name)) {
+            $message->getHeaders()->addTextHeader($name, $value);
         }
     }
 
@@ -404,6 +438,10 @@ abstract class LettrMailable extends Mailable
         $className = class_basename(static::class);
 
         // Convert PascalCase to kebab-case
-        return strtolower(preg_replace('/(?<!^)[A-Z]/', '-$0', $className) ?? $className);
+        $tag = strtolower(preg_replace('/(?<!^)[A-Z]/', '-$0', $className) ?? $className);
+
+        // The API rejects tags over 64 characters, and a tag that is only there
+        // for analytics must never be the reason an email fails to send.
+        return rtrim(substr($tag, 0, self::MAX_GENERATED_TAG_LENGTH), '-');
     }
 }
